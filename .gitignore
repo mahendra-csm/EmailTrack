@@ -4,9 +4,8 @@
 /build
 next-env.d.ts
 
-# local data + secrets
+# local data
 /data
-.env.local
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
