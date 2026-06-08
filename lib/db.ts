@@ -10,7 +10,11 @@ import fs from "node:fs";
 const g = globalThis as unknown as { __db?: Database.Database };
 
 function createDb(): Database.Database {
-  const dataDir = path.join(process.cwd(), "data");
+  // DATA_DIR lets a host point the SQLite file at a persistent, writable volume
+  // (e.g. a Railway volume mounted at /data). Falls back to ./data locally.
+  const dataDir = process.env.DATA_DIR
+    ? path.resolve(process.env.DATA_DIR)
+    : path.join(process.cwd(), "data");
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
   const db = new Database(path.join(dataDir, "app.sqlite"));
