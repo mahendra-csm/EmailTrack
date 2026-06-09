@@ -79,6 +79,17 @@ const SCHEMA = `
     subject     TEXT    NOT NULL,
     body        TEXT    NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS send_jobs (
+    campaign_id     INTEGER NOT NULL,
+    stage           INTEGER NOT NULL,
+    smtp_account_id INTEGER NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'running',
+    sent            INTEGER NOT NULL DEFAULT 0,
+    failed          INTEGER NOT NULL DEFAULT 0,
+    message         TEXT,
+    updated_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (campaign_id, stage)
+  );
   CREATE INDEX IF NOT EXISTS idx_stages_lookup ON campaign_stages(campaign_id, stage, status);
   CREATE INDEX IF NOT EXISTS idx_contacts_campaign ON contacts(campaign_id);
   CREATE INDEX IF NOT EXISTS idx_logs_campaign ON email_logs(campaign_id, id);

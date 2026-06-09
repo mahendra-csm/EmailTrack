@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCampaign } from "@/lib/queries";
 import { sendStageBatch } from "@/lib/send";
 import { getAccountById, pickSmtp } from "@/lib/mailer";
+import { backgroundEnabled, enqueueWorker } from "@/lib/qstash";
+import { startJob } from "@/lib/jobStore";
 import { Stage, STAGES } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -45,7 +47,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Sender account not found." }, { status: 404 });
   }
 
+  // Background mode (QStash configured + public URL): start a server-side job
+  // that keeps sending after the user closes the tab.
+  if (backgroundEnabled()) {
+    await startJob(campaignId, stage, smtpAccountId);
+    await enqueueWorker({ campaign_id: campaignId, stage, smtp_account_id: smtpAccountId }, 0);
+    return NextResponse.json({ mode: "background" });
+  }
+
+  // Inline mode (local / no QStash): send one batch; the browser loops.
   const batchSize = Math.min(Math.max(Number(body.batch_size) || 20, 1), 50);
   const result = await sendStageBatch(campaignId, stage, smtpAccountId, batchSize);
-  return NextResponse.json(result);
+  return NextResponse.json({ mode: "inline", ...result });
 }
