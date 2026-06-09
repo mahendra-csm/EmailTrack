@@ -7,7 +7,10 @@ import { Stage, STAGES } from "@/lib/types";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const BATCH = 30;
+// Emails per worker run = emails per QStash message. Bigger batch = fewer
+// QStash messages (free tier = 500/day), but each run must finish under
+// maxDuration (60s). 50 keeps 15k emails/day at ~300 messages. Tune via env.
+const BATCH = Math.min(Math.max(Number(process.env.WORKER_BATCH_SIZE) || 50, 1), 90);
 
 // Called by QStash. Sends one batch, records progress, and re-enqueues itself
 // until the stage is finished, the sender is exhausted, or it's stopped.

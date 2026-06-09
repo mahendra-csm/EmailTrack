@@ -24,7 +24,10 @@ export async function enqueueWorker(
   payload: WorkerPayload,
   delaySeconds = 0
 ): Promise<void> {
-  const client = new Client({ token: process.env.QSTASH_TOKEN! });
+  const client = new Client({
+    token: process.env.QSTASH_TOKEN!,
+    baseUrl: process.env.QSTASH_URL || undefined,
+  });
   await client.publishJSON({
     url: `${baseUrl()}/api/send-worker`,
     body: payload,
