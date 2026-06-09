@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",
-    "@upstash/qstash": "^2.7.20",
     "next": "^15.1.6",
     "nodemailer": "^6.10.0",
     "react": "^19.0.0",

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCampaign, stageSummaries, stageRows, dueDate } from "@/lib/queries";
-import { getJob } from "@/lib/jobStore";
 import { STAGES } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -22,7 +21,6 @@ export async function GET(
       stage,
       due: dueDate(campaign.created_at, stage),
       rows: await stageRows(campaignId, stage),
-      job: await getJob(campaignId, stage),
     }))
   );
 
