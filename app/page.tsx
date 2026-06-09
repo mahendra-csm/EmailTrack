@@ -21,55 +21,58 @@ export default async function HomePage() {
         </Link>
       </div>
 
-      {/* How to use — always shown at the top of the dashboard */}
+      {/* How to use — compact guide at the top of the dashboard */}
       <div className="howto">
-        <div className="howto-title">📖 How to use this app</div>
-        <div className="howto-sub">
-          A manual sender: you upload a list, then send each follow-up stage by
-          hand. Nothing sends automatically — you stay in full control.
+        <div className="howto-head">
+          <span className="howto-title">How to use</span>
+          <span className="howto-sub">
+            Manual sender — nothing sends automatically. You stay in control.
+          </span>
         </div>
-        <div className="steps">
-          <div className="step">
-            <div className="num">1</div>
-            <div className="step-title">Upload a list</div>
-            <div className="step-body">
-              Click <b>New campaign</b>. Upload an <b>Excel/CSV</b> with an{" "}
-              <b>email</b> column (and optional <b>name</b>), and write the three
-              follow-up emails. The app creates <b>Day 1, Day 5, Day 10</b> for
-              every contact.
+        <ol className="steps">
+          <li className="step">
+            <span className="num">1</span>
+            <div>
+              <div className="step-title">Upload a list</div>
+              <div className="step-body">
+                <b>New campaign</b> → an Excel/CSV with an <b>email</b> column.
+                Creates Day 1, 5, 10 per contact.
+              </div>
             </div>
-          </div>
-          <div className="step">
-            <div className="num">2</div>
-            <div className="step-title">Pick a sender &amp; send</div>
-            <div className="step-body">
-              Open the campaign. Choose <b>which email address to send from</b>,
-              switch to the <b>Day 1 / 5 / 10</b> tab, and click <b>Send</b>. Each
-              sender can send <b>2,900 / day</b>; pick another when one fills up.
+          </li>
+          <li className="step">
+            <span className="num">2</span>
+            <div>
+              <div className="step-title">Pick a sender &amp; send</div>
+              <div className="step-body">
+                Open the campaign, choose the <b>from</b> address and a day tab,
+                then <b>Send</b>. 2,900/day each.
+              </div>
             </div>
-          </div>
-          <div className="step">
-            <div className="num">3</div>
-            <div className="step-title">Track progress</div>
-            <div className="step-body">
-              The campaign’s <b>Tracking</b> page shows every contact across all
-              stages — who’s been emailed, when, and the <b>follow-up due date</b>{" "}
-              for anything still pending.
+          </li>
+          <li className="step">
+            <span className="num">3</span>
+            <div>
+              <div className="step-title">Track progress</div>
+              <div className="step-body">
+                <b>Tracking</b> shows each contact across stages, with follow-up
+                due dates.
+              </div>
             </div>
-          </div>
-          <div className="step">
-            <div className="num">4</div>
-            <div className="step-title">Monitor &amp; review</div>
-            <div className="step-body">
-              <b>Senders</b> shows live daily usage for each address.{" "}
-              <b>Database</b> is the full record of every email ever sent, with
-              status and which sender it used.
+          </li>
+          <li className="step">
+            <span className="num">4</span>
+            <div>
+              <div className="step-title">Monitor</div>
+              <div className="step-body">
+                <b>Senders</b> = live usage. <b>Database</b> = every email sent.
+              </div>
             </div>
-          </div>
-        </div>
+          </li>
+        </ol>
       </div>
 
-      <div style={{ marginBottom: 28 }}>
+      <div style={{ marginBottom: 30 }}>
         <SmtpUsage title="Sender usage today" />
       </div>
 

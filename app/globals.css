@@ -117,9 +117,16 @@ code {
   font-weight: 600;
 }
 .nav-item .ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 18px;
-  text-align: center;
-  font-size: 15px;
+  height: 18px;
+  color: var(--muted-2);
+}
+.nav-item:hover .ic,
+.nav-item.active .ic {
+  color: var(--text);
 }
 .sidebar .spacer {
   flex: 1;
@@ -230,6 +237,44 @@ h2 {
   font-weight: 700;
   letter-spacing: -0.5px;
   margin-top: 6px;
+}
+
+/* Sender usage cards */
+.sender-card {
+  min-width: 0;
+}
+.sender-email {
+  display: flex;
+  align-items: baseline;
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 0;
+}
+.sender-local {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sender-domain {
+  flex: 1 1 auto;
+  color: var(--muted);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sender-track {
+  height: 7px;
+  border-radius: 999px;
+  background: #e7e9ee;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.sender-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
 }
 
 /* ---------- Tables ---------- */
@@ -478,59 +523,65 @@ select:focus {
   padding: 2px 8px;
 }
 
-/* ---------- How-to guide ---------- */
+/* ---------- How-to guide (compact, borderless steps) ---------- */
 
 .howto {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 20px 22px;
+  padding: 18px 20px;
   box-shadow: var(--shadow);
   margin-bottom: 26px;
 }
-.howto .howto-title {
+.howto-head {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 700;
-  margin-bottom: 4px;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 14px;
 }
-.howto .howto-sub {
+.howto-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.howto-sub {
   color: var(--muted);
   font-size: 13px;
-  margin-bottom: 16px;
 }
 .steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px 28px;
 }
 .step {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px;
-  background: #fff;
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
 }
 .step .num {
-  width: 24px;
-  height: 24px;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: var(--accent);
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   display: grid;
   place-items: center;
-  margin-bottom: 9px;
 }
 .step .step-title {
   font-weight: 650;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
+  font-size: 13.5px;
 }
 .step .step-body {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.5;
 }
 .step .step-body b {
