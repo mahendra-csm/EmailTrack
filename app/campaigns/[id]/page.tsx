@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import type { SmtpAccountUsage } from "../../components/SmtpUsage";
@@ -13,14 +13,6 @@ interface StageRow {
   status: "pending" | "sent";
   sent_at: string | null;
 }
-interface Job {
-  total: number;
-  sent: number;
-  failed: number;
-  done: boolean;
-  smtpEmail?: string;
-  message?: string;
-}
 interface Summary {
   stage: number;
   label: string;
@@ -32,12 +24,20 @@ interface StageBlock {
   stage: number;
   due: string;
   rows: StageRow[];
-  job: Job | null;
 }
 interface Detail {
   campaign: { id: number; name: string; status: string; created_at: string };
   summaries: Summary[];
   stages: StageBlock[];
+}
+interface BatchResult {
+  sent: number;
+  failed: number;
+  remaining: number;
+  exhausted: boolean;
+  error?: string;
+  message?: string;
+  smtpEmail?: string;
 }
 
 const STAGE_LABEL: Record<number, string> = { 1: "Day 1", 5: "Day 5", 10: "Day 10" };
@@ -50,6 +50,8 @@ export default function CampaignDetailPage() {
   const [selectedSmtp, setSelectedSmtp] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const cancelRef = useRef(false);
 
   const loadDetail = useCallback(async () => {
     const res = await fetch(`/api/campaigns/${id}`, { cache: "no-store" });
@@ -79,17 +81,6 @@ export default function CampaignDetailPage() {
     }
   }, [accounts, selectedSmtp]);
 
-  // Poll while any job is running.
-  useEffect(() => {
-    const running = data?.stages.some((s) => s.job && !s.job.done);
-    if (!running) return;
-    const t = setInterval(() => {
-      loadDetail();
-      loadAccounts();
-    }, 1500);
-    return () => clearInterval(t);
-  }, [data, loadDetail, loadAccounts]);
-
   const stageBlock = useMemo(
     () => data?.stages.find((s) => s.stage === activeStage),
     [data, activeStage]
@@ -99,21 +90,55 @@ export default function CampaignDetailPage() {
     [data, activeStage]
   );
 
+  // Send the active stage in repeated short batches (serverless-safe).
   async function sendStage() {
     if (!selectedSmtp) return;
     setSending(true);
+    cancelRef.current = false;
+    let totalSent = 0;
+    let totalFailed = 0;
+    setProgress("Starting…");
     try {
-      await fetch("/api/send-stage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          campaign_id: Number(id),
-          stage: activeStage,
-          smtp_account_id: selectedSmtp,
-        }),
-      });
-      await loadDetail();
-      await loadAccounts();
+      while (!cancelRef.current) {
+        const res: BatchResult = await fetch("/api/send-stage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            campaign_id: Number(id),
+            stage: activeStage,
+            smtp_account_id: selectedSmtp,
+            batch_size: 20,
+          }),
+        }).then((r) => r.json());
+
+        if (res.error) {
+          setProgress(res.error);
+          break;
+        }
+        totalSent += res.sent ?? 0;
+        totalFailed += res.failed ?? 0;
+        setProgress(
+          `Sent ${totalSent}${totalFailed ? `, ${totalFailed} failed` : ""} · ${res.remaining} left`
+        );
+        await loadDetail();
+        await loadAccounts();
+
+        if (res.exhausted) {
+          setProgress(
+            `${res.message ?? "Sender hit its daily limit."} (sent ${totalSent} this run)`
+          );
+          break;
+        }
+        if (res.remaining <= 0) {
+          setProgress(`Done — sent ${totalSent}${totalFailed ? `, ${totalFailed} failed` : ""}.`);
+          break;
+        }
+        // Safety: if a batch made no progress, stop to avoid an infinite loop.
+        if ((res.sent ?? 0) === 0 && (res.failed ?? 0) === 0) {
+          setProgress(res.message ?? "Stopped — nothing was sent.");
+          break;
+        }
+      }
     } finally {
       setSending(false);
     }
@@ -121,9 +146,6 @@ export default function CampaignDetailPage() {
 
   if (error) return <div className="notice error">{error}</div>;
   if (!data) return <p className="muted">Loading…</p>;
-
-  const job = stageBlock?.job ?? null;
-  const running = !!(job && !job.done);
 
   return (
     <div>
@@ -178,6 +200,7 @@ export default function CampaignDetailPage() {
             <select
               value={selectedSmtp ?? ""}
               onChange={(e) => setSelectedSmtp(Number(e.target.value))}
+              disabled={sending}
             >
               {accounts.map((a) => (
                 <option key={a.id} value={a.id} disabled={a.remaining <= 0}>
@@ -189,18 +212,28 @@ export default function CampaignDetailPage() {
           </div>
           <button
             className="btn"
-            disabled={!selectedSmtp || (stageSummary?.pending ?? 0) === 0 || sending || running}
+            disabled={!selectedSmtp || (stageSummary?.pending ?? 0) === 0 || sending}
             onClick={sendStage}
             style={{ alignSelf: "flex-end" }}
           >
-            {running ? "Sending…" : `Send ${STAGE_LABEL[activeStage]} (${stageSummary?.pending ?? 0})`}
+            {sending
+              ? "Sending…"
+              : `Send ${STAGE_LABEL[activeStage]} (${stageSummary?.pending ?? 0})`}
           </button>
-          {job && (
+          {sending && (
+            <button
+              className="btn secondary"
+              onClick={() => {
+                cancelRef.current = true;
+              }}
+              style={{ alignSelf: "flex-end" }}
+            >
+              Stop
+            </button>
+          )}
+          {progress && (
             <span className="progress" style={{ alignSelf: "flex-end" }}>
-              {running
-                ? `Sending via ${job.smtpEmail} … ${job.sent + job.failed}/${job.total}`
-                : job.message ??
-                  `Done — ${job.sent} sent${job.failed ? `, ${job.failed} failed` : ""}`}
+              {progress}
             </span>
           )}
         </div>

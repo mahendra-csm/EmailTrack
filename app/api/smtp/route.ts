@@ -4,8 +4,7 @@ import { accountsWithUsage } from "@/lib/mailer";
 export const runtime = "nodejs";
 
 export async function GET() {
-  // Never expose passwords to the client.
-  const accounts = accountsWithUsage().map((a) => ({
+  const accounts = (await accountsWithUsage()).map((a) => ({
     id: a.id,
     email: a.email,
     daily_limit: a.daily_limit,

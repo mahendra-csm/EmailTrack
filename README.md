@@ -11,10 +11,30 @@ pool with daily quotas.
 ## Stack
 
 - **Next.js 15** (App Router) — dashboard pages **and** API routes in one app
-- **SQLite** via `better-sqlite3` — single file at `data/app.sqlite`, created on first run
+- **libSQL / Turso** — SQLite-compatible database. Hosted Turso in production
+  (set `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`); falls back to a local
+  `data/app.sqlite` file when those aren't set, so `dev` works offline.
 - **Nodemailer** — sending over your SMTP accounts
-- **In-process job worker** — `Send` starts a background batch; the UI polls for
-  progress. No Redis/BullMQ needed.
+- **Client-driven batch sending** — each Send click loops short API calls
+  (≈20 emails each), so it works on serverless hosts (Vercel) with no
+  background worker, Redis, or queue.
+
+## Deploy to Vercel (with Turso)
+
+Vercel is serverless: no persistent disk, no background processes. This app is
+built for that — but it needs a hosted database (Turso) instead of a local file.
+
+1. **Create a Turso database** at <https://turso.tech> (free tier is plenty).
+   Grab its **Database URL** (`libsql://<name>-<org>.turso.io`) and create an
+   **auth token**.
+2. **Import the repo into Vercel** (New Project → pick the GitHub repo).
+3. In Vercel → **Settings → Environment Variables**, add (Production + Preview):
+   - `TURSO_DATABASE_URL` = `libsql://…turso.io`
+   - `TURSO_AUTH_TOKEN` = `<your token>`
+   SMTP credentials load from the committed `.env.local`; to override, add
+   `SMTP1_*`…`SMTP5_*` here too.
+4. **Deploy.** The first request auto-creates the schema and seeds the senders
+   into Turso. The send route runs up to `maxDuration = 60s` per batch.
 
 ## Setup
 

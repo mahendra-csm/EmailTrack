@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
       body: String(form.get(`body_${stage}`) ?? "").trim() || DEFAULT_BODY[stage],
     }));
 
-    const result = createCampaign({ name, contacts, templates });
+    const result = await createCampaign({ name, contacts, templates });
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed.";

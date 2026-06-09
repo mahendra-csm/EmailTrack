@@ -10,8 +10,8 @@ export default async function LogsPage({
 }) {
   const { id } = await params;
   const campaignId = Number(id);
-  const campaign = getCampaign(campaignId);
-  const logs = campaignLogs(campaignId);
+  const campaign = await getCampaign(campaignId);
+  const logs = await campaignLogs(campaignId);
 
   return (
     <div>

@@ -4,5 +4,5 @@ import { listCampaigns } from "@/lib/queries";
 export const runtime = "nodejs";
 
 export async function GET() {
-  return NextResponse.json({ campaigns: listCampaigns() });
+  return NextResponse.json({ campaigns: await listCampaigns() });
 }

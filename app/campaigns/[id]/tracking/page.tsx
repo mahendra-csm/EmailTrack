@@ -45,9 +45,9 @@ export default async function TrackingPage({
 }) {
   const { id } = await params;
   const campaignId = Number(id);
-  const campaign = getCampaign(campaignId);
-  const rows = trackingMatrix(campaignId);
-  const summaries = stageSummaries(campaignId);
+  const campaign = await getCampaign(campaignId);
+  const rows = await trackingMatrix(campaignId);
+  const summaries = await stageSummaries(campaignId);
 
   const due: Record<number, string> = {};
   if (campaign) {

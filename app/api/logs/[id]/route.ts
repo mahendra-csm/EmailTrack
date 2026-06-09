@@ -8,5 +8,5 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  return NextResponse.json({ logs: campaignLogs(Number(id)) });
+  return NextResponse.json({ logs: await campaignLogs(Number(id)) });
 }

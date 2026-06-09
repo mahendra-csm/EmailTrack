@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCampaign } from "@/lib/queries";
-import { startStageJob } from "@/lib/jobs";
+import { sendStageBatch } from "@/lib/send";
 import { getAccountById, pickSmtp } from "@/lib/mailer";
 import { Stage, STAGES } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 60; // allow a batch up to 60s on Vercel
 
 export async function POST(req: NextRequest) {
-  let body: { campaign_id?: number; stage?: number; smtp_account_id?: number };
+  let body: {
+    campaign_id?: number;
+    stage?: number;
+    smtp_account_id?: number;
+    batch_size?: number;
+  };
   try {
     body = await req.json();
   } catch {
@@ -23,25 +29,23 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  if (!getCampaign(campaignId)) {
+  if (!(await getCampaign(campaignId))) {
     return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
   }
 
-  // Use the sender the user picked; fall back to the first account with quota.
+  // Chosen sender, or fall back to the first account with quota.
   let smtpAccountId = Number(body.smtp_account_id);
   if (!smtpAccountId) {
-    const fallback = pickSmtp();
+    const fallback = await pickSmtp();
     if (!fallback) {
-      return NextResponse.json(
-        { error: "No SMTP account has quota left today." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No SMTP account has quota left today." }, { status: 400 });
     }
     smtpAccountId = fallback.id;
-  } else if (!getAccountById(smtpAccountId)) {
+  } else if (!(await getAccountById(smtpAccountId))) {
     return NextResponse.json({ error: "Sender account not found." }, { status: 404 });
   }
 
-  const job = startStageJob(campaignId, stage, smtpAccountId);
-  return NextResponse.json({ job });
+  const batchSize = Math.min(Math.max(Number(body.batch_size) || 20, 1), 50);
+  const result = await sendStageBatch(campaignId, stage, smtpAccountId, batchSize);
+  return NextResponse.json(result);
 }

@@ -5,9 +5,9 @@ export const dynamic = "force-dynamic";
 
 const STAGE_LABEL: Record<number, string> = { 1: "Day 1", 5: "Day 5", 10: "Day 10" };
 
-export default function DatabasePage() {
-  const records = databaseRecords();
-  const stats = databaseStats();
+export default async function DatabasePage() {
+  const records = await databaseRecords();
+  const stats = await databaseStats();
 
   return (
     <div>

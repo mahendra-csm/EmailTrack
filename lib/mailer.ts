@@ -1,12 +1,12 @@
 import nodemailer, { Transporter } from "nodemailer";
-import { getDb } from "./db";
+import { db } from "./db";
 import { SmtpAccount } from "./types";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
-// Cache one transporter per SMTP account id so we reuse connections.
+// Cache one transporter per SMTP account id.
 const transports = new Map<number, Transporter>();
 
 function transportFor(acc: SmtpAccount): Transporter {
@@ -23,66 +23,59 @@ function transportFor(acc: SmtpAccount): Transporter {
   return t;
 }
 
-// Roll the daily counter over to a new day if needed, then return the account.
-function resetIfNewDay(acc: SmtpAccount): SmtpAccount {
+async function resetIfNewDay(acc: SmtpAccount): Promise<SmtpAccount> {
   if (acc.last_reset_date !== today()) {
-    getDb()
-      .prepare(
-        "UPDATE smtp_accounts SET used_today_count = 0, last_reset_date = ? WHERE id = ?"
-      )
-      .run(today(), acc.id);
+    const c = await db();
+    await c.execute({
+      sql: "UPDATE smtp_accounts SET used_today_count = 0, last_reset_date = ? WHERE id = ?",
+      args: [today(), acc.id],
+    });
     acc.used_today_count = 0;
     acc.last_reset_date = today();
   }
   return acc;
 }
 
-/**
- * Pick the first SMTP account in the pool that still has quota left today.
- * Returns null when every account has hit its daily_limit.
- */
-export function pickSmtp(): SmtpAccount | null {
-  const db = getDb();
-  const accounts = db
-    .prepare("SELECT * FROM smtp_accounts ORDER BY id")
-    .all() as SmtpAccount[];
-
-  for (const raw of accounts) {
-    const acc = resetIfNewDay(raw);
-    if (acc.used_today_count < acc.daily_limit) return acc;
-  }
-  return null;
+async function bumpUsage(accountId: number): Promise<void> {
+  const c = await db();
+  await c.execute({
+    sql: "UPDATE smtp_accounts SET used_today_count = used_today_count + 1 WHERE id = ?",
+    args: [accountId],
+  });
 }
 
 export interface AccountUsage extends SmtpAccount {
   remaining: number;
 }
 
-/** All accounts with their daily counters rolled over and remaining computed. */
-export function accountsWithUsage(): AccountUsage[] {
-  const accounts = getDb()
-    .prepare("SELECT * FROM smtp_accounts ORDER BY id")
-    .all() as SmtpAccount[];
-  return accounts.map((raw) => {
-    const acc = resetIfNewDay(raw);
-    return { ...acc, remaining: Math.max(0, acc.daily_limit - acc.used_today_count) };
-  });
+export async function accountsWithUsage(): Promise<AccountUsage[]> {
+  const c = await db();
+  const res = await c.execute("SELECT * FROM smtp_accounts ORDER BY id");
+  const list = res.rows as unknown as SmtpAccount[];
+  const out: AccountUsage[] = [];
+  for (const raw of list) {
+    const acc = await resetIfNewDay(raw);
+    out.push({ ...acc, remaining: Math.max(0, acc.daily_limit - acc.used_today_count) });
+  }
+  return out;
 }
 
-/** Fetch one account by id with its daily counter rolled over. */
-export function getAccountById(id: number): SmtpAccount | undefined {
-  const acc = getDb()
-    .prepare("SELECT * FROM smtp_accounts WHERE id = ?")
-    .get(id) as SmtpAccount | undefined;
+export async function getAccountById(id: number): Promise<SmtpAccount | undefined> {
+  const c = await db();
+  const res = await c.execute({ sql: "SELECT * FROM smtp_accounts WHERE id = ?", args: [id] });
+  const acc = res.rows[0] as unknown as SmtpAccount | undefined;
   return acc ? resetIfNewDay(acc) : undefined;
 }
 
-function bumpUsage(accountId: number) {
-  getDb()
-    .prepare(
-      "UPDATE smtp_accounts SET used_today_count = used_today_count + 1 WHERE id = ?"
-    )
-    .run(accountId);
+/** First account in the pool with quota left today, or null. */
+export async function pickSmtp(): Promise<SmtpAccount | null> {
+  const c = await db();
+  const res = await c.execute("SELECT * FROM smtp_accounts ORDER BY id");
+  for (const raw of res.rows as unknown as SmtpAccount[]) {
+    const acc = await resetIfNewDay(raw);
+    if (acc.used_today_count < acc.daily_limit) return acc;
+  }
+  return null;
 }
 
 export function renderTemplate(
@@ -101,15 +94,14 @@ export interface SendResult {
 }
 
 /**
- * Send one message from a SPECIFIC account (the one the user picked in the UI).
- * Enforces that account's daily cap and bumps its counter on success.
- * Throws "ACCOUNT_EXHAUSTED" when the chosen account has no quota left.
+ * Send one message from a SPECIFIC account. Enforces its daily cap and bumps
+ * the counter on success. Throws "ACCOUNT_EXHAUSTED" when out of quota.
  */
 export async function sendWith(
   accountId: number,
   params: { to: string; subject: string; html: string }
 ): Promise<SendResult> {
-  const acc = getAccountById(accountId);
+  const acc = await getAccountById(accountId);
   if (!acc) throw new Error("ACCOUNT_NOT_FOUND");
   if (acc.used_today_count >= acc.daily_limit) throw new Error("ACCOUNT_EXHAUSTED");
 
@@ -123,40 +115,7 @@ export async function sendWith(
       subject: params.subject,
       html: params.html,
     });
-    bumpUsage(acc.id);
-    return { ok: true, smtpEmail: acc.email };
-  } catch (err) {
-    return {
-      ok: false,
-      smtpEmail: acc.email,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
-}
-
-/**
- * Send one message. Picks an SMTP account from the pool, sends, and bumps the
- * usage counter on success. Throws "POOL_EXHAUSTED" when no quota remains.
- */
-export async function sendOne(params: {
-  to: string;
-  subject: string;
-  html: string;
-}): Promise<SendResult> {
-  const acc = pickSmtp();
-  if (!acc) throw new Error("POOL_EXHAUSTED");
-
-  const fromName = process.env.MAIL_FROM_NAME?.trim();
-  const from = fromName ? `"${fromName}" <${acc.email}>` : acc.email;
-
-  try {
-    await transportFor(acc).sendMail({
-      from,
-      to: params.to,
-      subject: params.subject,
-      html: params.html,
-    });
-    bumpUsage(acc.id);
+    await bumpUsage(acc.id);
     return { ok: true, smtpEmail: acc.email };
   } catch (err) {
     return {

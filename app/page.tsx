@@ -4,8 +4,8 @@ import SmtpUsage from "./components/SmtpUsage";
 
 export const dynamic = "force-dynamic";
 
-export default function HomePage() {
-  const campaigns = listCampaigns();
+export default async function HomePage() {
+  const campaigns = await listCampaigns();
 
   return (
     <div>
