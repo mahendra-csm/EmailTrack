@@ -103,7 +103,7 @@ export async function getAccountById(id: number): Promise<SmtpAccount | undefine
  */
 export async function pickSmtp(): Promise<SmtpAccount | null> {
   const c = await db();
-  const res = await c.execute("SELECT * FROM smtp_accounts");
+  const res = await c.execute("SELECT * FROM smtp_accounts WHERE in_pool = 1");
   const eligible: SmtpAccount[] = [];
   for (const raw of res.rows as unknown as SmtpAccount[]) {
     const acc = await resetWindows(raw);
@@ -121,11 +121,12 @@ export async function pickSmtp(): Promise<SmtpAccount | null> {
 
 export function renderTemplate(
   tpl: string,
-  vars: { name?: string | null; email: string }
+  vars: { name?: string | null; email: string; coupon?: string | null }
 ): string {
   return tpl
     .replaceAll("{{name}}", vars.name?.trim() || "there")
-    .replaceAll("{{email}}", vars.email);
+    .replaceAll("{{email}}", vars.email)
+    .replaceAll("{{coupon}}", vars.coupon?.trim() || "");
 }
 
 export interface SendResult {

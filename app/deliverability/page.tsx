@@ -9,7 +9,6 @@ function pct(n: number, d: number): string {
   if (!d) return "—";
   return `${((n / d) * 100).toFixed(1)}%`;
 }
-
 export default async function DeliverabilityPage() {
   const totals = await deliverabilityTotals();
   const campaigns = await deliverabilityByCampaign();
@@ -24,7 +23,6 @@ export default async function DeliverabilityPage() {
     { label: "Unsub rate", value: pct(totals.unsubs, totals.sent), sub: `${totals.unsubs.toLocaleString()} opted out` },
     { label: "Failed", value: totals.failed.toLocaleString(), sub: `${totals.suppressed.toLocaleString()} suppressed total` },
   ];
-
   return (
     <div>
       <div className="page-head">

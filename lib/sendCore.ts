@@ -41,12 +41,14 @@ const DUE_WHERE = `s.status='pending' AND s.send_date <= date('now')
 // daily and hourly caps: the contact's pinned account if set, otherwise any
 // account in the pool.
 const HAS_QUOTA = "sa.used_today_count < sa.daily_limit AND sa.used_hour_count < sa.hourly_limit";
+// Pinned contacts may use their account even if it's a dedicated (non-pool) box;
+// unpinned contacts only draw from the campaign pool (in_pool = 1).
 const SENDABLE = `(
   (ct.smtp_account_id IS NOT NULL AND EXISTS(
      SELECT 1 FROM smtp_accounts sa WHERE sa.id = ct.smtp_account_id AND ${HAS_QUOTA}))
   OR
   (ct.smtp_account_id IS NULL AND EXISTS(
-     SELECT 1 FROM smtp_accounts sa WHERE ${HAS_QUOTA}))
+     SELECT 1 FROM smtp_accounts sa WHERE sa.in_pool = 1 AND ${HAS_QUOTA}))
 )`;
 
 export async function dueCount(c: Client): Promise<number> {
@@ -140,6 +142,7 @@ interface ContactRow {
   smtp_account_id: number | null;
   unsubscribed_at: string | null;
   replied_at: string | null;
+  coupon: string | null;
 }
 
 /** Cancel this touch + the contact's remaining touches, e.g. after opt-out. */
@@ -172,7 +175,7 @@ export async function sendStageRow(
   preferredAccountId?: number
 ): Promise<{ outcome: Outcome; smtp?: string; error?: string }> {
   const contactRes = await c.execute({
-    sql: "SELECT id, email, name, smtp_account_id, unsubscribed_at, replied_at FROM contacts WHERE id = ?",
+    sql: "SELECT id, email, name, smtp_account_id, unsubscribed_at, replied_at, coupon FROM contacts WHERE id = ?",
     args: [row.contact_id],
   });
   const contact = contactRes.rows[0] as unknown as ContactRow | undefined;
@@ -240,7 +243,7 @@ export async function sendStageRow(
     return { outcome: "no_quota" };
   }
 
-  const vars = { name: contact.name, email: contact.email };
+  const vars = { name: contact.name, email: contact.email, coupon: contact.coupon };
   const subject = renderTemplate(tpl.subject, vars);
   const ids = { c: row.campaign_id, k: row.contact_id, s: row.stage };
   const unsubUrl = unsubscribeUrl(unsubToken({ e: contact.email, c: row.campaign_id }));

@@ -41,7 +41,8 @@ const SCHEMA = `
     last_reset_date  TEXT,
     hourly_limit     INTEGER NOT NULL DEFAULT 100,
     used_hour_count  INTEGER NOT NULL DEFAULT 0,
-    hour_reset_at    TEXT
+    hour_reset_at    TEXT,
+    in_pool          INTEGER NOT NULL DEFAULT 1
   );
   CREATE TABLE IF NOT EXISTS campaigns (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,7 +59,8 @@ const SCHEMA = `
     campaign_id     INTEGER NOT NULL,
     email           TEXT    NOT NULL,
     name            TEXT,
-    smtp_account_id INTEGER
+    smtp_account_id INTEGER,
+    coupon          TEXT
   );
   CREATE TABLE IF NOT EXISTS campaign_stages (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -137,12 +139,14 @@ async function migrate(c: Client): Promise<void> {
   await add("contacts", ct, "smtp_account_id", "smtp_account_id INTEGER");
   await add("contacts", ct, "unsubscribed_at", "unsubscribed_at TEXT");
   await add("contacts", ct, "replied_at", "replied_at TEXT");
+  await add("contacts", ct, "coupon", "coupon TEXT");
 
   const sm = await columns("smtp_accounts");
   await add("smtp_accounts", sm, "last_reply_poll", "last_reply_poll TEXT");
   await add("smtp_accounts", sm, "hourly_limit", "hourly_limit INTEGER NOT NULL DEFAULT 100");
   await add("smtp_accounts", sm, "used_hour_count", "used_hour_count INTEGER NOT NULL DEFAULT 0");
   await add("smtp_accounts", sm, "hour_reset_at", "hour_reset_at TEXT");
+  await add("smtp_accounts", sm, "in_pool", "in_pool INTEGER NOT NULL DEFAULT 1");
 
   const st = await columns("campaign_stages");
   await add("campaign_stages", st, "send_date", "send_date TEXT");

@@ -55,6 +55,7 @@ export interface SmtpAccount {
   hourly_limit: number;
   used_hour_count: number;
   hour_reset_at: string | null;
+  in_pool: number; // 1 = part of the campaign sending pool, 0 = dedicated (e.g. committee)
 }
 
 export interface Campaign {
@@ -77,6 +78,7 @@ export interface Contact {
   email: string;
   name: string | null;
   smtp_account_id: number | null; // pinned sender — all touches for this contact use it
+  coupon: string | null; // referral/coupon code (used by the committee feature)
 }
 
 export interface CampaignStage {
