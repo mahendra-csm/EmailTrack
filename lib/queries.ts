@@ -382,6 +382,70 @@ export async function deliverabilityByCampaign(): Promise<CampaignDeliverability
   return rows<CampaignDeliverability>(res);
 }
 
+// ---- Recipients (valid / bounced / unsubscribed / replied) ----------------
+
+// One derived row per contact: status, the date it happened, the country it
+// targeted, and which sender address it went out from.
+const RECIPIENT_INNER = `
+  SELECT ct.id AS contact_id, ct.email, ct.name, cm.name AS campaign, cm.country,
+    sa.email AS sender,
+    CASE
+      WHEN sup.reason = 'bounce'            THEN 'bounced'
+      WHEN ct.unsubscribed_at IS NOT NULL   THEN 'unsubscribed'
+      WHEN ct.replied_at IS NOT NULL        THEN 'replied'
+      WHEN EXISTS(SELECT 1 FROM campaign_stages s WHERE s.contact_id = ct.id AND s.status='sent') THEN 'valid'
+      ELSE 'pending'
+    END AS status,
+    CASE
+      WHEN sup.reason = 'bounce'            THEN sup.created_at
+      WHEN ct.unsubscribed_at IS NOT NULL   THEN ct.unsubscribed_at
+      WHEN ct.replied_at IS NOT NULL        THEN ct.replied_at
+      ELSE (SELECT MAX(s.sent_at) FROM campaign_stages s WHERE s.contact_id = ct.id AND s.status='sent')
+    END AS event_date
+  FROM contacts ct
+  JOIN campaigns cm ON cm.id = ct.campaign_id
+  LEFT JOIN smtp_accounts sa ON sa.id = ct.smtp_account_id
+  LEFT JOIN suppressions sup ON lower(sup.email) = lower(ct.email)
+`;
+
+export interface RecipientRow {
+  contact_id: number;
+  email: string;
+  name: string | null;
+  campaign: string | null;
+  country: string | null;
+  sender: string | null;
+  status: "valid" | "bounced" | "unsubscribed" | "replied" | "pending";
+  event_date: string | null;
+}
+
+export async function recipientRecords(status?: string, limit = 1000): Promise<RecipientRow[]> {
+  const c = await db();
+  const where = status ? "WHERE status = ?" : "";
+  const res = await c.execute({
+    sql: `SELECT * FROM (${RECIPIENT_INNER}) ${where}
+          ORDER BY (event_date IS NULL), event_date DESC, contact_id DESC
+          LIMIT ?`,
+    args: status ? [status, limit] : [limit],
+  });
+  return rows<RecipientRow>(res);
+}
+
+export async function recipientStatusCounts(): Promise<Record<string, number>> {
+  const c = await db();
+  const res = await c.execute(
+    `SELECT status, COUNT(*) AS n FROM (${RECIPIENT_INNER}) GROUP BY status`
+  );
+  const out: Record<string, number> = {};
+  let total = 0;
+  for (const r of rows<{ status: string; n: number }>(res)) {
+    out[r.status] = r.n;
+    total += r.n;
+  }
+  out.all = total;
+  return out;
+}
+
 export interface SenderHealthRow {
   sender: string;
   sent: number;

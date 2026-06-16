@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type IconName = "campaigns" | "plus" | "database" | "mail" | "chart";
+type IconName = "campaigns" | "plus" | "database" | "mail" | "chart" | "people";
 
 function Icon({ name }: { name: IconName }) {
   const common = {
@@ -54,12 +54,22 @@ function Icon({ name }: { name: IconName }) {
           <path d="M7 14l3-4 3 3 4-6" />
         </svg>
       );
+    case "people":
+      return (
+        <svg {...common}>
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+      );
   }
 }
 
 const NAV: { href: string; label: string; icon: IconName; exact: boolean }[] = [
   { href: "/", label: "Campaigns", icon: "campaigns", exact: true },
   { href: "/upload", label: "New campaign", icon: "plus", exact: false },
+  { href: "/recipients", label: "Recipients", icon: "people", exact: false },
   { href: "/deliverability", label: "Deliverability", icon: "chart", exact: false },
   { href: "/database", label: "Database", icon: "database", exact: false },
   { href: "/senders", label: "Senders", icon: "mail", exact: false },
