@@ -4,6 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { BATCH_SCHEDULE, BatchType } from "@/lib/types";
 
+const COUNTRIES = [
+  "India", "United States", "United Kingdom", "Canada", "Australia", "Germany",
+  "France", "Italy", "Spain", "Netherlands", "United Arab Emirates", "Saudi Arabia",
+  "Singapore", "Malaysia", "Indonesia", "Philippines", "Nigeria", "South Africa",
+  "Brazil", "Mexico", "Japan", "China", "South Korea", "Pakistan", "Bangladesh",
+  "Sri Lanka", "Egypt", "Turkey", "Poland", "Sweden",
+];
+
 export default function UploadPage() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -81,6 +89,20 @@ export default function UploadPage() {
             ))}
           </div>
         </div>
+
+        <label className="field">
+          <span className="lab">Target country</span>
+          <input type="text" name="country" list="country-list" placeholder="e.g. India" />
+          <datalist id="country-list">
+            {COUNTRIES.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+          <span className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            Which country this list targets — shown on the dashboard and used to
+            group your sending stats.
+          </span>
+        </label>
 
         <label className="field">
           <span className="lab">Start date (optional — defaults to today)</span>

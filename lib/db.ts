@@ -128,6 +128,7 @@ async function migrate(c: Client): Promise<void> {
   await add("campaigns", camp, "batch_type", "batch_type INTEGER NOT NULL DEFAULT 1");
   await add("campaigns", camp, "start_date", "start_date TEXT");
   await add("campaigns", camp, "auto_send", "auto_send INTEGER NOT NULL DEFAULT 1");
+  await add("campaigns", camp, "country", "country TEXT");
 
   const ct = await columns("contacts");
   await add("contacts", ct, "smtp_account_id", "smtp_account_id INTEGER");

@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
     const file = form.get("file");
     const batchType = (Number(form.get("batch_type")) === 2 ? 2 : 1) as BatchType;
     const startDate = String(form.get("start_date") ?? "").trim() || undefined;
+    const country = String(form.get("country") ?? "").trim() || null;
 
     if (!name) {
       return NextResponse.json({ error: "Campaign name is required." }, { status: 400 });
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await createCampaign({ name, contacts, batchType, startDate });
+    const result = await createCampaign({ name, contacts, batchType, startDate, country });
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed.";

@@ -63,6 +63,7 @@ export interface Campaign {
   batch_type: BatchType;
   start_date: string | null;
   auto_send: number; // 1 = scheduler may send it, 0 = paused from auto-send
+  country: string | null; // target country for this campaign (label/segmentation)
 }
 
 export type StageStatus = "pending" | "sending" | "sent" | "failed" | "canceled";

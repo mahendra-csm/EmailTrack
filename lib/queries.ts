@@ -308,6 +308,7 @@ export interface DeliverabilityTotals {
   clicksUnique: number;
   replies: number;
   unsubs: number;
+  bounces: number;
   suppressed: number;
 }
 
@@ -326,13 +327,15 @@ export async function deliverabilityTotals(): Promise<DeliverabilityTotals> {
     clicks_unique: number;
     replies: number;
     unsubs: number;
+    bounces: number;
   }>(
     await c.execute(`SELECT
         SUM(CASE WHEN type='open'  THEN 1 ELSE 0 END) AS opens,
         COUNT(DISTINCT CASE WHEN type='open'  THEN contact_id END) AS opens_unique,
         COUNT(DISTINCT CASE WHEN type='click' THEN contact_id END) AS clicks_unique,
-        SUM(CASE WHEN type='reply' THEN 1 ELSE 0 END) AS replies,
-        SUM(CASE WHEN type='unsubscribe' THEN 1 ELSE 0 END) AS unsubs
+        SUM(CASE WHEN type='reply'  THEN 1 ELSE 0 END) AS replies,
+        SUM(CASE WHEN type='unsubscribe' THEN 1 ELSE 0 END) AS unsubs,
+        SUM(CASE WHEN type='bounce' THEN 1 ELSE 0 END) AS bounces
       FROM email_events`)
   );
   const supp = one<{ n: number }>(await c.execute("SELECT COUNT(*) AS n FROM suppressions"));
@@ -345,6 +348,7 @@ export async function deliverabilityTotals(): Promise<DeliverabilityTotals> {
     clicksUnique: e?.clicks_unique ?? 0,
     replies: e?.replies ?? 0,
     unsubs: e?.unsubs ?? 0,
+    bounces: e?.bounces ?? 0,
     suppressed: supp?.n ?? 0,
   };
 }
@@ -353,6 +357,7 @@ export interface CampaignDeliverability {
   id: number;
   name: string;
   status: string;
+  country: string | null;
   sent: number;
   failed: number;
   opens_unique: number;
@@ -364,7 +369,7 @@ export interface CampaignDeliverability {
 export async function deliverabilityByCampaign(): Promise<CampaignDeliverability[]> {
   const c = await db();
   const res = await c.execute(
-    `SELECT c.id, c.name, c.status,
+    `SELECT c.id, c.name, c.status, c.country,
        (SELECT COUNT(*) FROM campaign_stages s WHERE s.campaign_id=c.id AND s.status='sent') AS sent,
        (SELECT COUNT(*) FROM campaign_stages s WHERE s.campaign_id=c.id AND s.status='failed') AS failed,
        (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='open') AS opens_unique,

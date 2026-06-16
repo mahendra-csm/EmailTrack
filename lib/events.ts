@@ -74,6 +74,40 @@ export async function unsubscribeEmail(email: string, campaignId?: number | null
   });
 }
 
+/**
+ * Process a bounce (hard delivery failure detected in the inbox): suppress the
+ * address, cancel its remaining touches everywhere, and log one bounce event.
+ * Idempotent — if already suppressed (e.g. the NDR sits in the mailbox across
+ * several polls) it does nothing, so counts don't inflate. Returns true the
+ * first time an address is actually bounced.
+ */
+export async function processBounce(email: string, campaignId?: number | null): Promise<boolean> {
+  const c = await db();
+  const norm = email.toLowerCase().trim();
+  if (await isSuppressed(norm)) return false;
+
+  await suppress(norm, "bounce", campaignId);
+  await c.execute({
+    sql: `UPDATE campaign_stages SET status='canceled', claimed_at=NULL, next_attempt_at=NULL,
+            last_error='Bounced — address removed'
+          WHERE status IN ('pending','sending')
+            AND contact_id IN (SELECT id FROM contacts WHERE lower(email) = ?)`,
+    args: [norm],
+  });
+  const ct = await c.execute({
+    sql: "SELECT id, campaign_id FROM contacts WHERE lower(email) = ? ORDER BY id DESC LIMIT 1",
+    args: [norm],
+  });
+  const row = ct.rows[0] as unknown as { id: number; campaign_id: number } | undefined;
+  await recordEvent({
+    type: "bounce",
+    campaignId: campaignId ?? row?.campaign_id ?? null,
+    contactId: row?.id ?? null,
+    meta: norm,
+  });
+  return true;
+}
+
 /** Mark a contact as replied and stop their remaining follow-ups. */
 export async function markReplied(contactId: number, campaignId: number): Promise<void> {
   const c = await db();

@@ -41,6 +41,7 @@ interface Detail {
     batch_type: number;
     start_date: string | null;
     auto_send: number;
+    country: string | null;
   };
   summaries: Summary[];
   stages: StageBlock[];
@@ -187,8 +188,9 @@ export default function CampaignDetailPage() {
           </Link>
           <h1 style={{ marginTop: 6 }}>{data.campaign.name}</h1>
           <p className="muted" style={{ margin: 0 }}>
-            Batch {data.campaign.batch_type} · starts {data.campaign.start_date ?? "—"} · created{" "}
-            {data.campaign.created_at}
+            Batch {data.campaign.batch_type}
+            {data.campaign.country ? ` · ${data.campaign.country}` : ""} · starts{" "}
+            {data.campaign.start_date ?? "—"} · created {data.campaign.created_at}
           </p>
         </div>
         <div className="row-actions">

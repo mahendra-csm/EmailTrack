@@ -1,16 +1,19 @@
 import { ImapFlow } from "imapflow";
+import type { Client } from "@libsql/client";
 import { db } from "./db";
-import { markReplied } from "./events";
+import { markReplied, processBounce } from "./events";
 
 // ---------------------------------------------------------------------------
-// Reply detection. Polls each sender mailbox over IMAP for recent messages and,
-// when a message's From address matches one of our contacts, marks that contact
-// as replied and STOPS their remaining follow-ups (so we never keep mailing
-// someone who already answered). Best-effort: a mailbox that won't connect is
-// recorded in `errors` and skipped — it never blocks the others or the sender.
-//
-// Creds reuse the SMTP account (email + password). IMAP host defaults to the
-// SMTP host with "smtp." -> "imap." (Hostinger), overridable via IMAP_HOST.
+// Mailbox polling. Connects to each sender mailbox over IMAP and looks at recent
+// messages:
+//   • REPLIES  — From matches one of our contacts -> mark replied, stop their
+//     follow-ups.
+//   • BOUNCES  — a delivery-failure notice (Mailer-Daemon / "Undelivered…") ->
+//     parse the failed recipient out of the report and suppress it so the next
+//     follow-up skips that address.
+// Best-effort: a mailbox that won't connect is recorded in `errors` and skipped.
+// Creds reuse the SMTP account; IMAP host defaults to the SMTP host with
+// "smtp."->"imap." (Hostinger), overridable via IMAP_HOST.
 // ---------------------------------------------------------------------------
 
 function imapHostFor(smtpHost: string): string {
@@ -29,7 +32,50 @@ export interface ReplyPollResult {
   accounts: number;
   scanned: number;
   replies: number;
+  bounces: number;
   errors: string[];
+}
+
+const EMAIL_RE = /[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/;
+const EMAIL_RE_G = /[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g;
+
+/** Does this message look like a delivery-failure notice? */
+function looksLikeBounce(from: string, name: string, subject: string): boolean {
+  const who = `${from} ${name}`.toLowerCase();
+  if (/mailer.?daemon|postmaster|mail delivery|delivery (subsystem|status)/.test(who)) return true;
+  return /undeliver|delivery (status|failure|notification)|failure notice|returned mail|mail delivery (failed|system)|could not be delivered|delivery has failed|not delivered/i.test(
+    subject || ""
+  );
+}
+
+/** Pull the failed recipient(s) out of a bounce, keeping only real contacts. */
+export async function bounceTargets(c: Client, source: string): Promise<string[]> {
+  const found = new Set<string>();
+  const add = (s?: string) => {
+    const m = s?.match(EMAIL_RE);
+    if (m) found.add(m[0].toLowerCase());
+  };
+  for (const re of [
+    /Final-Recipient:\s*rfc822;\s*([^\r\n]+)/gi,
+    /Original-Recipient:\s*rfc822;\s*([^\r\n]+)/gi,
+    /X-Failed-Recipients:\s*([^\r\n]+)/gi,
+  ]) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(source))) add(m[1]);
+  }
+  // Fallback: any address in the report that we actually mailed.
+  let candidates = [...found];
+  if (candidates.length === 0) {
+    candidates = [...new Set((source.match(EMAIL_RE_G) || []).map((s) => s.toLowerCase()))].slice(0, 30);
+  }
+  if (candidates.length === 0) return [];
+  const res = await c.execute({
+    sql: `SELECT DISTINCT lower(email) AS e FROM contacts WHERE lower(email) IN (${candidates
+      .map(() => "?")
+      .join(",")})`,
+    args: candidates,
+  });
+  return (res.rows as unknown as { e: string }[]).map((r) => r.e);
 }
 
 export async function pollReplies(): Promise<ReplyPollResult> {
@@ -40,10 +86,10 @@ export async function pollReplies(): Promise<ReplyPollResult> {
   const accounts = res.rows as unknown as Acct[];
   let scanned = 0;
   let replies = 0;
+  let bounces = 0;
   const errors: string[] = [];
 
   for (const a of accounts) {
-    // Look back to the last successful poll, or 3 days on first run.
     const since = a.last_reply_poll
       ? new Date(a.last_reply_poll)
       : new Date(Date.now() - 3 * 86400 * 1000);
@@ -62,17 +108,32 @@ export async function pollReplies(): Promise<ReplyPollResult> {
       try {
         const uids = await client.search({ since }, { uid: true });
         if (uids && uids.length) {
-          for await (const msg of client.fetch(uids, { envelope: true }, { uid: true })) {
+          for await (const msg of client.fetch(uids, { uid: true, envelope: true })) {
             scanned++;
-            const from = msg.envelope?.from?.[0]?.address?.toLowerCase().trim();
-            if (!from) continue;
-            const ct = await c.execute({
-              sql: "SELECT id, campaign_id FROM contacts WHERE lower(email) = ? AND replied_at IS NULL",
-              args: [from],
-            });
-            for (const row of ct.rows as unknown as { id: number; campaign_id: number }[]) {
-              await markReplied(row.id, row.campaign_id);
-              replies++;
+            const from = msg.envelope?.from?.[0]?.address?.toLowerCase().trim() ?? "";
+            const fname = msg.envelope?.from?.[0]?.name ?? "";
+            const subject = msg.envelope?.subject ?? "";
+
+            if (looksLikeBounce(from, fname, subject)) {
+              let src = "";
+              try {
+                const full = await client.fetchOne(String(msg.uid), { source: true }, { uid: true });
+                src = full && full.source ? full.source.toString("utf8") : "";
+              } catch {
+                /* couldn't fetch body — skip */
+              }
+              for (const email of await bounceTargets(c, src)) {
+                if (await processBounce(email)) bounces++;
+              }
+            } else if (from) {
+              const ct = await c.execute({
+                sql: "SELECT id, campaign_id FROM contacts WHERE lower(email) = ? AND replied_at IS NULL",
+                args: [from],
+              });
+              for (const row of ct.rows as unknown as { id: number; campaign_id: number }[]) {
+                await markReplied(row.id, row.campaign_id);
+                replies++;
+              }
             }
           }
         }
@@ -94,5 +155,5 @@ export async function pollReplies(): Promise<ReplyPollResult> {
     }
   }
 
-  return { accounts: accounts.length, scanned, replies, errors };
+  return { accounts: accounts.length, scanned, replies, bounces, errors };
 }

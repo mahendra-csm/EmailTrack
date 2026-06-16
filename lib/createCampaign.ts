@@ -43,6 +43,7 @@ export async function createCampaign(args: {
   contacts: ParsedContact[];
   batchType: BatchType;
   startDate?: string; // YYYY-MM-DD; defaults to today
+  country?: string | null;
 }): Promise<{
   campaignId: number;
   contactCount: number;
@@ -57,9 +58,9 @@ export async function createCampaign(args: {
   const schedule = scheduleFor(startDate, args.batchType);
 
   const campaign = await c.execute({
-    sql: `INSERT INTO campaigns (name, status, batch_type, start_date, auto_send)
-          VALUES (?, 'active', ?, ?, 1)`,
-    args: [args.name, args.batchType, startDate],
+    sql: `INSERT INTO campaigns (name, status, batch_type, start_date, auto_send, country)
+          VALUES (?, 'active', ?, ?, 1, ?)`,
+    args: [args.name, args.batchType, startDate, args.country?.trim() || null],
   });
   const campaignId = Number(campaign.lastInsertRowid);
 

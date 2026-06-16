@@ -95,6 +95,7 @@ export default async function HomePage() {
             <thead>
               <tr>
                 <th>Campaign</th>
+                <th>Country</th>
                 <th>Contacts</th>
                 <th>Sent</th>
                 <th>Pending</th>
@@ -110,6 +111,7 @@ export default async function HomePage() {
                       {c.name}
                     </Link>
                   </td>
+                  <td>{c.country ?? <span className="muted">—</span>}</td>
                   <td>{c.total_contacts}</td>
                   <td>{c.total_sent}</td>
                   <td>{c.total_pending}</td>
