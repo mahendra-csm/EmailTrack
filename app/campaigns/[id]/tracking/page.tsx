@@ -1,22 +1,18 @@
 import Link from "next/link";
-import { getCampaign, trackingMatrix, dueDate, stageSummaries } from "@/lib/queries";
+import { getCampaign, trackingMatrix, stageSummaries } from "@/lib/queries";
+import { touchesFor } from "@/lib/types";
+import { scheduleFor } from "@/lib/schedule";
 
 export const dynamic = "force-dynamic";
-
-const STAGES = [
-  { stage: 1, label: "Day 1" },
-  { stage: 5, label: "Day 5" },
-  { stage: 10, label: "Day 10" },
-] as const;
 
 function Cell({
   status,
   sentAt,
   due,
 }: {
-  status: "pending" | "sent";
-  sentAt: string | null;
-  due: string;
+  status: "pending" | "sending" | "sent" | "failed" | "canceled" | undefined;
+  sentAt: string | null | undefined;
+  due: string | null;
 }) {
   if (status === "sent") {
     return (
@@ -28,11 +24,17 @@ function Cell({
       </div>
     );
   }
+  if (status === "failed") {
+    return <span className="badge failed">failed</span>;
+  }
+  if (status === "canceled") {
+    return <span className="badge canceled">suppressed</span>;
+  }
   return (
     <div>
-      <span className="badge pending">pending</span>
+      <span className="badge pending">{status === "sending" ? "sending" : "pending"}</span>
       <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>
-        due {due}
+        {due ? `due ${due}` : ""}
       </div>
     </div>
   );
@@ -47,12 +49,15 @@ export default async function TrackingPage({
   const campaignId = Number(id);
   const campaign = await getCampaign(campaignId);
   const rows = await trackingMatrix(campaignId);
-  const summaries = await stageSummaries(campaignId);
 
-  const due: Record<number, string> = {};
-  if (campaign) {
-    for (const s of STAGES) due[s.stage] = dueDate(campaign.created_at, s.stage);
-  }
+  const touches = campaign ? touchesFor(campaign.batch_type) : [];
+  const summaries = campaign ? await stageSummaries(campaign) : [];
+  const due: Record<number, string | null> =
+    campaign?.start_date
+      ? Object.fromEntries(
+          scheduleFor(campaign.start_date, campaign.batch_type).map((t) => [t.seq, t.send_date])
+        )
+      : {};
 
   return (
     <div>
@@ -65,17 +70,17 @@ export default async function TrackingPage({
             Tracking{campaign ? ` — ${campaign.name}` : ""}
           </h1>
           <p className="muted" style={{ margin: 0 }}>
-            Every contact across all three follow-up stages.
+            Every contact across the scheduled emails.
           </p>
         </div>
       </div>
 
-      {/* quick stage totals */}
       <div className="grid cards-row" style={{ marginBottom: 18 }}>
         {summaries.map((s) => (
-          <div className="stat" key={s.stage}>
+          <div className="stat" key={s.seq}>
             <div className="label">
-              {s.label} · due {due[s.stage]}
+              {s.label}
+              {s.send_date ? ` · ${s.send_date}` : ""}
             </div>
             <div className="value" style={{ fontSize: 22 }}>
               {s.sent}
@@ -85,7 +90,8 @@ export default async function TrackingPage({
               </span>
             </div>
             <div className="muted" style={{ fontSize: 12 }}>
-              {s.pending} pending
+              {s.pending} pending{s.failed ? ` · ${s.failed} failed` : ""}
+              {s.canceled ? ` · ${s.canceled} suppressed` : ""}
             </div>
           </div>
         ))}
@@ -97,9 +103,9 @@ export default async function TrackingPage({
             <tr>
               <th>Email</th>
               <th>Name</th>
-              <th>Day 1</th>
-              <th>Day 5</th>
-              <th>Day 10</th>
+              {touches.map((t) => (
+                <th key={t.seq}>{t.label}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -107,20 +113,20 @@ export default async function TrackingPage({
               <tr key={r.contact_id}>
                 <td>{r.email}</td>
                 <td>{r.name ?? <span className="muted">—</span>}</td>
-                <td>
-                  <Cell status={r.s1_status} sentAt={r.s1_sent_at} due={due[1]} />
-                </td>
-                <td>
-                  <Cell status={r.s5_status} sentAt={r.s5_sent_at} due={due[5]} />
-                </td>
-                <td>
-                  <Cell status={r.s10_status} sentAt={r.s10_sent_at} due={due[10]} />
-                </td>
+                {touches.map((t) => (
+                  <td key={t.seq}>
+                    <Cell
+                      status={r.touches[t.seq]?.status}
+                      sentAt={r.touches[t.seq]?.sent_at}
+                      due={due[t.seq] ?? null}
+                    />
+                  </td>
+                ))}
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted" style={{ padding: 24 }}>
+                <td colSpan={2 + touches.length} className="muted" style={{ padding: 24 }}>
                   No contacts in this campaign.
                 </td>
               </tr>

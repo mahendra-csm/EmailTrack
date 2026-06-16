@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCampaign, stageSummaries, stageRows, dueDate } from "@/lib/queries";
-import { STAGES } from "@/lib/types";
+import { getCampaign, stageSummaries, stageRows } from "@/lib/queries";
+import { scheduleFor } from "@/lib/schedule";
+import { touchesFor } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -15,12 +16,17 @@ export async function GET(
     return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
   }
 
-  const summaries = await stageSummaries(campaignId);
+  const summaries = await stageSummaries(campaign);
+  const sched = campaign.start_date
+    ? new Map(scheduleFor(campaign.start_date, campaign.batch_type).map((t) => [t.seq, t.send_date]))
+    : new Map<number, string>();
+
   const stages = await Promise.all(
-    STAGES.map(async (stage) => ({
-      stage,
-      due: dueDate(campaign.created_at, stage),
-      rows: await stageRows(campaignId, stage),
+    touchesFor(campaign.batch_type).map(async (t) => ({
+      stage: t.seq,
+      label: t.label,
+      due: sched.get(t.seq) ?? null,
+      rows: await stageRows(campaignId, t.seq),
     }))
   );
 

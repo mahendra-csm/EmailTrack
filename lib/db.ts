@@ -45,13 +45,17 @@ const SCHEMA = `
     name            TEXT    NOT NULL,
     created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
     smtp_account_id INTEGER,
-    status          TEXT    NOT NULL DEFAULT 'active'
+    status          TEXT    NOT NULL DEFAULT 'active',
+    batch_type      INTEGER NOT NULL DEFAULT 1,
+    start_date      TEXT,
+    auto_send       INTEGER NOT NULL DEFAULT 1
   );
   CREATE TABLE IF NOT EXISTS contacts (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    campaign_id INTEGER NOT NULL,
-    email       TEXT    NOT NULL,
-    name        TEXT
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id     INTEGER NOT NULL,
+    email           TEXT    NOT NULL,
+    name            TEXT,
+    smtp_account_id INTEGER
   );
   CREATE TABLE IF NOT EXISTS campaign_stages (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,6 +64,11 @@ const SCHEMA = `
     stage           INTEGER NOT NULL,
     status          TEXT    NOT NULL DEFAULT 'pending',
     scheduled_label TEXT    NOT NULL,
+    send_date       TEXT,
+    claimed_at      TEXT,
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    last_error      TEXT,
+    next_attempt_at TEXT,
     sent_at         TEXT
   );
   CREATE TABLE IF NOT EXISTS email_logs (
@@ -79,10 +88,66 @@ const SCHEMA = `
     subject     TEXT    NOT NULL,
     body        TEXT    NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS suppressions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    email       TEXT    NOT NULL UNIQUE,
+    reason      TEXT,
+    campaign_id INTEGER,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS email_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    type        TEXT    NOT NULL,
+    campaign_id INTEGER,
+    contact_id  INTEGER,
+    stage       INTEGER,
+    url         TEXT,
+    meta        TEXT,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
   CREATE INDEX IF NOT EXISTS idx_stages_lookup ON campaign_stages(campaign_id, stage, status);
   CREATE INDEX IF NOT EXISTS idx_contacts_campaign ON contacts(campaign_id);
   CREATE INDEX IF NOT EXISTS idx_logs_campaign ON email_logs(campaign_id, id);
+  CREATE INDEX IF NOT EXISTS idx_events_campaign ON email_events(campaign_id, type);
+  CREATE INDEX IF NOT EXISTS idx_events_contact ON email_events(contact_id, type);
 `;
+
+// Bring an older database (pre-batch-scheduler) up to the current schema by
+// adding any missing columns. SQLite ALTER TABLE ADD COLUMN is a no-op-safe way
+// to migrate; we guard each on the live column list so re-runs are harmless.
+async function migrate(c: Client): Promise<void> {
+  const columns = async (table: string): Promise<string[]> => {
+    const res = await c.execute(`PRAGMA table_info(${table})`);
+    return (res.rows as unknown as { name: string }[]).map((r) => r.name);
+  };
+  const add = async (table: string, have: string[], col: string, ddl: string) => {
+    if (!have.includes(col)) await c.execute(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  };
+
+  const camp = await columns("campaigns");
+  await add("campaigns", camp, "batch_type", "batch_type INTEGER NOT NULL DEFAULT 1");
+  await add("campaigns", camp, "start_date", "start_date TEXT");
+  await add("campaigns", camp, "auto_send", "auto_send INTEGER NOT NULL DEFAULT 1");
+
+  const ct = await columns("contacts");
+  await add("contacts", ct, "smtp_account_id", "smtp_account_id INTEGER");
+  await add("contacts", ct, "unsubscribed_at", "unsubscribed_at TEXT");
+  await add("contacts", ct, "replied_at", "replied_at TEXT");
+
+  const sm = await columns("smtp_accounts");
+  await add("smtp_accounts", sm, "last_reply_poll", "last_reply_poll TEXT");
+
+  const st = await columns("campaign_stages");
+  await add("campaign_stages", st, "send_date", "send_date TEXT");
+  await add("campaign_stages", st, "claimed_at", "claimed_at TEXT");
+  await add("campaign_stages", st, "attempts", "attempts INTEGER NOT NULL DEFAULT 0");
+  await add("campaign_stages", st, "last_error", "last_error TEXT");
+  await add("campaign_stages", st, "next_attempt_at", "next_attempt_at TEXT");
+
+  // Created here (not in SCHEMA) so it runs only after send_date is guaranteed
+  // to exist on databases that pre-date the scheduler.
+  await c.execute("CREATE INDEX IF NOT EXISTS idx_stages_due ON campaign_stages(status, send_date)");
+}
 
 async function seedSmtpFromEnv(c: Client): Promise<void> {
   for (let n = 1; n <= 20; n++) {
@@ -106,6 +171,7 @@ async function seedSmtpFromEnv(c: Client): Promise<void> {
 async function init(): Promise<void> {
   const c = client();
   await c.executeMultiple(SCHEMA);
+  await migrate(c);
   await seedSmtpFromEnv(c);
 }
 

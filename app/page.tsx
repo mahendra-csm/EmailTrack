@@ -13,7 +13,7 @@ export default async function HomePage() {
         <div>
           <h1>Campaigns</h1>
           <p className="muted" style={{ margin: 0 }}>
-            Upload a list, then send each stage by hand.
+            Upload a list, pick a batch — the follow-up sequence sends itself.
           </p>
         </div>
         <Link href="/upload" className="btn">
@@ -26,7 +26,7 @@ export default async function HomePage() {
         <div className="howto-head">
           <span className="howto-title">How to use</span>
           <span className="howto-sub">
-            Manual sender — nothing sends automatically. You stay in control.
+            Upload &amp; pick a batch — the scheduler sends each follow-up on its day.
           </span>
         </div>
         <ol className="steps">
@@ -36,17 +36,17 @@ export default async function HomePage() {
               <div className="step-title">Upload a list</div>
               <div className="step-body">
                 <b>New campaign</b> → an Excel/CSV with an <b>email</b> column.
-                Creates Day 1, 5, 10 per contact.
+                Choose <b>Batch 1</b> (days 1,3,5,7) or <b>Batch 2</b> (days 2,4,6).
               </div>
             </div>
           </li>
           <li className="step">
             <span className="num">2</span>
             <div>
-              <div className="step-title">Pick a sender &amp; send</div>
+              <div className="step-title">It sends itself</div>
               <div className="step-body">
-                Open the campaign, choose the <b>from</b> address and a day tab,
-                then <b>Send</b>. 2,900/day each.
+                Fixed templates go out automatically on schedule via the cron
+                ping — no clicking. Only one batch sends per day.
               </div>
             </div>
           </li>
@@ -55,8 +55,8 @@ export default async function HomePage() {
             <div>
               <div className="step-title">Track progress</div>
               <div className="step-body">
-                <b>Tracking</b> shows each contact across stages, with follow-up
-                due dates.
+                <b>Tracking</b> shows each contact across the scheduled emails,
+                with send dates.
               </div>
             </div>
           </li>

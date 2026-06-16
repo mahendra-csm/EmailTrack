@@ -1,27 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseContacts } from "@/lib/excel";
-import { createCampaign, StageTemplateInput } from "@/lib/createCampaign";
-import { Stage, STAGES } from "@/lib/types";
+import { createCampaign } from "@/lib/createCampaign";
+import { BatchType } from "@/lib/types";
 
 export const runtime = "nodejs";
-
-const DEFAULT_SUBJECT: Record<Stage, string> = {
-  1: "Quick hello, {{name}}",
-  5: "Following up, {{name}}",
-  10: "One last note, {{name}}",
-};
-
-const DEFAULT_BODY: Record<Stage, string> = {
-  1: "<p>Hi {{name}},</p><p>Reaching out for the first time...</p>",
-  5: "<p>Hi {{name}},</p><p>Just following up on my earlier note...</p>",
-  10: "<p>Hi {{name}},</p><p>Last time I'll reach out — let me know if helpful.</p>",
-};
 
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
     const name = String(form.get("name") ?? "").trim();
     const file = form.get("file");
+    const batchType = (Number(form.get("batch_type")) === 2 ? 2 : 1) as BatchType;
+    const startDate = String(form.get("start_date") ?? "").trim() || undefined;
 
     if (!name) {
       return NextResponse.json({ error: "Campaign name is required." }, { status: 400 });
@@ -39,14 +29,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Templates come from the form (subject_1, body_1, ...) with sensible defaults.
-    const templates: StageTemplateInput[] = STAGES.map((stage) => ({
-      stage,
-      subject: String(form.get(`subject_${stage}`) ?? "").trim() || DEFAULT_SUBJECT[stage],
-      body: String(form.get(`body_${stage}`) ?? "").trim() || DEFAULT_BODY[stage],
-    }));
-
-    const result = await createCampaign({ name, contacts, templates });
+    const result = await createCampaign({ name, contacts, batchType, startDate });
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed.";

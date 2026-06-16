@@ -2,32 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-const STAGE_DEFAULTS = [
-  {
-    stage: 1,
-    label: "Day 1",
-    subject: "Quick hello, {{name}}",
-    body: "Hi {{name}},\n\nReaching out for the first time...",
-  },
-  {
-    stage: 5,
-    label: "Day 5",
-    subject: "Following up, {{name}}",
-    body: "Hi {{name}},\n\nJust following up on my earlier note...",
-  },
-  {
-    stage: 10,
-    label: "Day 10",
-    subject: "One last note, {{name}}",
-    body: "Hi {{name}},\n\nLast time I'll reach out — let me know if helpful.",
-  },
-];
+import { BATCH_SCHEDULE, BatchType } from "@/lib/types";
 
 export default function UploadPage() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [batchType, setBatchType] = useState<BatchType>(1);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -45,14 +26,15 @@ export default function UploadPage() {
     }
   }
 
+  const touches = BATCH_SCHEDULE[batchType];
+
   return (
     <div style={{ maxWidth: 720 }}>
-      <h1>Upload campaign</h1>
+      <h1>Upload a list</h1>
       <p className="muted">
-        Excel/CSV with an <strong>email</strong> column (and optional{" "}
-        <strong>name</strong>). Three stages — Day 1, Day 5, Day 10 — are created
-        per contact. Use <code>{"{{name}}"}</code> and <code>{"{{email}}"}</code>{" "}
-        as placeholders.
+        Drop in an Excel/CSV with an <strong>email</strong> column (optional{" "}
+        <strong>name</strong>). Pick a batch — the fixed follow-up sequence then
+        sends <strong>automatically</strong> on schedule. No templates to write.
       </p>
 
       {error && <div className="notice error">{error}</div>}
@@ -60,7 +42,7 @@ export default function UploadPage() {
       <form onSubmit={onSubmit}>
         <label className="field">
           <span className="lab">Campaign name</span>
-          <input type="text" name="name" placeholder="June outreach" required />
+          <input type="text" name="name" placeholder="June invitation — Batch 1" required />
         </label>
 
         <label className="field">
@@ -68,22 +50,61 @@ export default function UploadPage() {
           <input type="file" name="file" accept=".xlsx,.xls,.csv" required />
         </label>
 
-        {STAGE_DEFAULTS.map((s) => (
-          <div className="card" key={s.stage} style={{ marginBottom: 14 }}>
-            <h2 style={{ marginTop: 0 }}>{s.label} email</h2>
-            <label className="field">
-              <span className="lab">Subject</span>
-              <input type="text" name={`subject_${s.stage}`} defaultValue={s.subject} />
-            </label>
-            <label className="field" style={{ marginBottom: 0 }}>
-              <span className="lab">Body (HTML allowed)</span>
-              <textarea name={`body_${s.stage}`} defaultValue={s.body} />
-            </label>
+        <div className="field">
+          <span className="lab">Batch</span>
+          <div style={{ display: "flex", gap: 10 }}>
+            {([1, 2] as BatchType[]).map((b) => (
+              <label
+                key={b}
+                className="card"
+                style={{
+                  flex: 1,
+                  cursor: "pointer",
+                  borderColor: batchType === b ? "var(--accent, #00acff)" : "var(--border)",
+                  padding: 12,
+                }}
+              >
+                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="radio"
+                    name="batch_type"
+                    value={b}
+                    checked={batchType === b}
+                    onChange={() => setBatchType(b)}
+                  />
+                  <strong>Batch {b}</strong>
+                </span>
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  {b === 1 ? "Sends days 1, 3, 5, 7 — 4 emails" : "Sends days 2, 4, 6 — 3 emails"}
+                </div>
+              </label>
+            ))}
           </div>
-        ))}
+        </div>
+
+        <label className="field">
+          <span className="lab">Start date (optional — defaults to today)</span>
+          <input type="date" name="start_date" />
+          <span className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            If these days collide with another active batch, the start auto-shifts
+            so only one batch ever sends per day.
+          </span>
+        </label>
+
+        <div className="card" style={{ marginBottom: 14 }}>
+          <h2 style={{ marginTop: 0, fontSize: 15 }}>Schedule for Batch {batchType}</h2>
+          <ol style={{ margin: 0, paddingLeft: 18 }}>
+            {touches.map((t) => (
+              <li key={t.seq} style={{ marginBottom: 4 }}>
+                <strong>{t.label}</strong>{" "}
+                <span className="muted">— day {t.offset + 1}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
 
         <button className="btn" type="submit" disabled={busy}>
-          {busy ? "Uploading…" : "Create campaign"}
+          {busy ? "Uploading…" : "Create & schedule"}
         </button>
       </form>
     </div>

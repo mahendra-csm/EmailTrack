@@ -46,7 +46,7 @@ export default async function LogsPage({
                 <tr key={l.id}>
                   <td className="muted">{l.timestamp}</td>
                   <td>{l.email ?? l.contact_id}</td>
-                  <td>Day {l.stage}</td>
+                  <td>Email {l.stage}</td>
                   <td className="muted">{l.smtp_used ?? "—"}</td>
                   <td>
                     <span className={`badge ${l.status}`}>{l.status}</span>

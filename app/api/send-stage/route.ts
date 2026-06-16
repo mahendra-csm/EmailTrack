@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCampaign } from "@/lib/queries";
 import { sendStageBatch } from "@/lib/send";
 import { getAccountById, pickSmtp } from "@/lib/mailer";
-import { Stage, STAGES } from "@/lib/types";
+import { touchesFor } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60; // allow a batch up to 60s on Vercel
@@ -21,16 +21,21 @@ export async function POST(req: NextRequest) {
   }
 
   const campaignId = Number(body.campaign_id);
-  const stage = Number(body.stage) as Stage;
+  const stage = Number(body.stage);
 
-  if (!campaignId || !STAGES.includes(stage)) {
+  if (!campaignId) {
+    return NextResponse.json({ error: "campaign_id is required." }, { status: 400 });
+  }
+  const campaign = await getCampaign(campaignId);
+  if (!campaign) {
+    return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
+  }
+  const validStages = touchesFor(campaign.batch_type).map((t) => t.seq);
+  if (!validStages.includes(stage)) {
     return NextResponse.json(
-      { error: "campaign_id and a valid stage (1, 5, or 10) are required." },
+      { error: `Invalid stage. Expected one of ${validStages.join(", ")}.` },
       { status: 400 }
     );
-  }
-  if (!(await getCampaign(campaignId))) {
-    return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
   }
 
   // Chosen sender, or fall back to the first account with quota.

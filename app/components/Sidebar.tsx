@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type IconName = "campaigns" | "plus" | "database" | "mail";
+type IconName = "campaigns" | "plus" | "database" | "mail" | "chart";
 
 function Icon({ name }: { name: IconName }) {
   const common = {
@@ -47,12 +47,20 @@ function Icon({ name }: { name: IconName }) {
           <path d="m3 7 9 6 9-6" />
         </svg>
       );
+    case "chart":
+      return (
+        <svg {...common}>
+          <path d="M3 3v18h18" />
+          <path d="M7 14l3-4 3 3 4-6" />
+        </svg>
+      );
   }
 }
 
 const NAV: { href: string; label: string; icon: IconName; exact: boolean }[] = [
   { href: "/", label: "Campaigns", icon: "campaigns", exact: true },
   { href: "/upload", label: "New campaign", icon: "plus", exact: false },
+  { href: "/deliverability", label: "Deliverability", icon: "chart", exact: false },
   { href: "/database", label: "Database", icon: "database", exact: false },
   { href: "/senders", label: "Senders", icon: "mail", exact: false },
 ];
@@ -89,7 +97,7 @@ export default function Sidebar() {
       </nav>
 
       <div className="spacer" />
-      <div className="foot">Manual multi-stage sender</div>
+      <div className="foot">Automatic batch sender</div>
     </aside>
   );
 }

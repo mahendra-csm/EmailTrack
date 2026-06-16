@@ -10,23 +10,38 @@ interface StageRow {
   contact_id: number;
   email: string;
   name: string | null;
-  status: "pending" | "sent";
+  status: "pending" | "sending" | "sent" | "failed" | "canceled";
   sent_at: string | null;
+  attempts: number;
+  last_error: string | null;
+  sender: string | null;
 }
 interface Summary {
-  stage: number;
+  seq: number;
   label: string;
+  send_date: string | null;
   pending: number;
   sent: number;
+  failed: number;
+  canceled: number;
   total: number;
 }
 interface StageBlock {
   stage: number;
-  due: string;
+  label: string;
+  due: string | null;
   rows: StageRow[];
 }
 interface Detail {
-  campaign: { id: number; name: string; status: string; created_at: string };
+  campaign: {
+    id: number;
+    name: string;
+    status: string;
+    created_at: string;
+    batch_type: number;
+    start_date: string | null;
+    auto_send: number;
+  };
   summaries: Summary[];
   stages: StageBlock[];
 }
@@ -37,10 +52,7 @@ interface BatchResult {
   exhausted: boolean;
   error?: string;
   message?: string;
-  smtpEmail?: string;
 }
-
-const STAGE_LABEL: Record<number, string> = { 1: "Day 1", 5: "Day 5", 10: "Day 10" };
 
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -73,7 +85,6 @@ export default function CampaignDetailPage() {
     loadAccounts();
   }, [loadDetail, loadAccounts]);
 
-  // Default the sender to the first account with quota left.
   useEffect(() => {
     if (selectedSmtp === null && accounts.length > 0) {
       const firstFree = accounts.find((a) => a.remaining > 0) ?? accounts[0];
@@ -86,11 +97,21 @@ export default function CampaignDetailPage() {
     [data, activeStage]
   );
   const stageSummary = useMemo(
-    () => data?.summaries.find((s) => s.stage === activeStage),
+    () => data?.summaries.find((s) => s.seq === activeStage),
     [data, activeStage]
   );
+  const activeLabel = stageBlock?.label ?? `Email ${activeStage}`;
 
-  // Send the active stage in repeated short batches (serverless-safe).
+  const today = new Date().toISOString().slice(0, 10);
+  const nextDue = useMemo(
+    () =>
+      data?.summaries
+        .filter((s) => s.pending > 0 && s.send_date)
+        .sort((a, b) => (a.send_date! < b.send_date! ? -1 : 1))[0] ?? null,
+    [data]
+  );
+
+  // Manual override: push the active email now in serverless-safe batches.
   async function sendStage() {
     if (!selectedSmtp) return;
     setSending(true);
@@ -124,16 +145,13 @@ export default function CampaignDetailPage() {
         await loadAccounts();
 
         if (res.exhausted) {
-          setProgress(
-            `${res.message ?? "Sender hit its daily limit."} (sent ${totalSent} this run)`
-          );
+          setProgress(`${res.message ?? "Sender hit its daily limit."} (sent ${totalSent})`);
           break;
         }
         if (res.remaining <= 0) {
           setProgress(`Done — sent ${totalSent}${totalFailed ? `, ${totalFailed} failed` : ""}.`);
           break;
         }
-        // Safety: if a batch made no progress, stop to avoid an infinite loop.
         if ((res.sent ?? 0) === 0 && (res.failed ?? 0) === 0) {
           setProgress(res.message ?? "Stopped — nothing was sent.");
           break;
@@ -144,8 +162,21 @@ export default function CampaignDetailPage() {
     }
   }
 
+  async function retryFailed() {
+    setProgress("Re-queuing failed…");
+    const res = await fetch(`/api/campaigns/${id}/retry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage: activeStage }),
+    }).then((r) => r.json());
+    setProgress(`Re-queued ${res.requeued ?? 0} failed — they'll send on the next run.`);
+    await loadDetail();
+  }
+
   if (error) return <div className="notice error">{error}</div>;
   if (!data) return <p className="muted">Loading…</p>;
+
+  const auto = data.campaign.auto_send === 1 && data.campaign.status !== "completed";
 
   return (
     <div>
@@ -156,7 +187,8 @@ export default function CampaignDetailPage() {
           </Link>
           <h1 style={{ marginTop: 6 }}>{data.campaign.name}</h1>
           <p className="muted" style={{ margin: 0 }}>
-            Created {data.campaign.created_at}
+            Batch {data.campaign.batch_type} · starts {data.campaign.start_date ?? "—"} · created{" "}
+            {data.campaign.created_at}
           </p>
         </div>
         <div className="row-actions">
@@ -169,6 +201,35 @@ export default function CampaignDetailPage() {
         </div>
       </div>
 
+      {/* Automatic-sending banner */}
+      <div
+        className="notice"
+        style={{
+          background: auto ? "#eafff1" : "#fff7e6",
+          border: "1px solid var(--border)",
+          marginBottom: 14,
+        }}
+      >
+        {data.campaign.status === "completed" ? (
+          <>✅ <strong>Completed</strong> — every scheduled email has been sent.</>
+        ) : auto ? (
+          <>
+            🤖 <strong>Automatic</strong> — emails go out on their own each day via the scheduler.{" "}
+            {nextDue ? (
+              <>
+                Next: <strong>{nextDue.label}</strong> on <strong>{nextDue.send_date}</strong>
+                {nextDue.send_date && nextDue.send_date <= today ? " (due now)" : ""} ·{" "}
+                {nextDue.pending} pending.
+              </>
+            ) : (
+              <>Nothing left pending.</>
+            )}
+          </>
+        ) : (
+          <>⏸ Auto-send is off for this campaign — use “Send now” below.</>
+        )}
+      </div>
+
       {/* Summary cards */}
       <div className="grid cards-row" style={{ marginBottom: 8 }}>
         <div className="stat">
@@ -176,8 +237,11 @@ export default function CampaignDetailPage() {
           <div className="value">{data.summaries[0]?.total ?? 0}</div>
         </div>
         {data.summaries.map((s) => (
-          <div className="stat" key={s.stage}>
-            <div className="label">{s.label}</div>
+          <div className="stat" key={s.seq}>
+            <div className="label">
+              {s.label}
+              {s.send_date ? ` · ${s.send_date}` : ""}
+            </div>
             <div className="value">
               {s.sent}
               <span className="muted" style={{ fontSize: 15 }}>
@@ -186,13 +250,12 @@ export default function CampaignDetailPage() {
               </span>
             </div>
             <div className="muted" style={{ fontSize: 12 }}>
-              {s.pending} pending
+              {s.pending} pending{s.failed ? ` · ${s.failed} failed` : ""}
             </div>
           </div>
         ))}
       </div>
 
-      {/* Send bar: pick sender + send the active stage */}
       <div className="card" style={{ marginTop: 18 }}>
         <div className="send-bar" style={{ marginTop: 0 }}>
           <div className="sender-field">
@@ -215,10 +278,9 @@ export default function CampaignDetailPage() {
             disabled={!selectedSmtp || (stageSummary?.pending ?? 0) === 0 || sending}
             onClick={sendStage}
             style={{ alignSelf: "flex-end" }}
+            title="Override the schedule and send this email right now"
           >
-            {sending
-              ? "Sending…"
-              : `Send ${STAGE_LABEL[activeStage]} (${stageSummary?.pending ?? 0})`}
+            {sending ? "Sending…" : `Send now: ${activeLabel} (${stageSummary?.pending ?? 0})`}
           </button>
           {sending && (
             <button
@@ -238,24 +300,22 @@ export default function CampaignDetailPage() {
           )}
         </div>
 
-        {/* Horizontal stage tabs */}
         <div className="tabs" style={{ marginTop: 14 }}>
           {data.stages.map((s) => {
-            const summ = data.summaries.find((x) => x.stage === s.stage);
+            const summ = data.summaries.find((x) => x.seq === s.stage);
             return (
               <button
                 key={s.stage}
                 className={`tab${activeStage === s.stage ? " active" : ""}`}
                 onClick={() => setActiveStage(s.stage)}
               >
-                {STAGE_LABEL[s.stage]}
+                {s.label}
                 <span className="pill">{summ?.pending ?? 0}</span>
               </button>
             );
           })}
         </div>
 
-        {/* Active stage email list (vertical) */}
         <div style={{ marginTop: 14 }}>
           <div
             style={{
@@ -267,8 +327,17 @@ export default function CampaignDetailPage() {
           >
             <div className="counts muted">
               {stageSummary?.sent ?? 0} sent · {stageSummary?.pending ?? 0} pending
+              {stageSummary?.failed ? ` · ${stageSummary.failed} failed` : ""}
+              {stageSummary?.canceled ? ` · ${stageSummary.canceled} suppressed` : ""}
             </div>
-            <span className="due-tag">Follow-up due: {stageBlock?.due}</span>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              {(stageSummary?.failed ?? 0) > 0 && (
+                <button className="btn secondary" onClick={retryFailed} disabled={sending}>
+                  Retry {stageSummary?.failed} failed
+                </button>
+              )}
+              <span className="due-tag">Scheduled: {stageBlock?.due ?? "—"}</span>
+            </div>
           </div>
           <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
             <table>
@@ -277,6 +346,7 @@ export default function CampaignDetailPage() {
                   <th>Email</th>
                   <th>Name</th>
                   <th>Status</th>
+                  <th>Sender</th>
                   <th>Sent at</th>
                 </tr>
               </thead>
@@ -287,7 +357,14 @@ export default function CampaignDetailPage() {
                     <td>{r.name ?? <span className="muted">—</span>}</td>
                     <td>
                       <span className={`badge ${r.status}`}>{r.status}</span>
+                      {r.last_error && (r.status === "failed" || r.status === "canceled") && (
+                        <div className="muted" style={{ fontSize: 11, marginTop: 2, maxWidth: 260 }}>
+                          {r.attempts > 0 ? `${r.attempts}× · ` : ""}
+                          {r.last_error}
+                        </div>
+                      )}
                     </td>
+                    <td className="muted">{r.sender ?? "—"}</td>
                     <td className="muted">{r.sent_at ?? "—"}</td>
                   </tr>
                 ))}

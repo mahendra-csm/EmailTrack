@@ -1,12 +1,6 @@
 import { db } from "./db";
-import {
-  Campaign,
-  EmailTemplate,
-  Stage,
-  StageSummary,
-  STAGES,
-  STAGE_LABELS,
-} from "./types";
+import { Campaign, EmailTemplate, StageSummary, touchesFor } from "./types";
+import { scheduleFor } from "./schedule";
 
 // libSQL rows come back as objects keyed by column name. We cast to our types;
 // TEXT -> string, INTEGER -> number, NULL -> null.
@@ -44,31 +38,44 @@ export async function getCampaign(id: number): Promise<Campaign | undefined> {
 
 // ---- Stage summaries (summary cards) --------------------------------------
 
-export async function stageSummaries(campaignId: number): Promise<StageSummary[]> {
+export async function stageSummaries(campaign: Campaign): Promise<StageSummary[]> {
   const c = await db();
   const res = await c.execute({
     sql: `SELECT stage,
-                 SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
-                 SUM(CASE WHEN status = 'sent'    THEN 1 ELSE 0 END) AS sent,
+                 SUM(CASE WHEN status IN ('pending','sending') THEN 1 ELSE 0 END) AS pending,
+                 SUM(CASE WHEN status = 'sent'     THEN 1 ELSE 0 END) AS sent,
+                 SUM(CASE WHEN status = 'failed'   THEN 1 ELSE 0 END) AS failed,
+                 SUM(CASE WHEN status = 'canceled' THEN 1 ELSE 0 END) AS canceled,
                  COUNT(*) AS total
           FROM campaign_stages
           WHERE campaign_id = ?
           GROUP BY stage`,
-    args: [campaignId],
+    args: [campaign.id],
   });
   const byStage = new Map(
-    rows<{ stage: Stage; pending: number; sent: number; total: number }>(res).map((r) => [
-      r.stage,
-      r,
-    ])
+    rows<{
+      stage: number;
+      pending: number;
+      sent: number;
+      failed: number;
+      canceled: number;
+      total: number;
+    }>(res).map((r) => [r.stage, r])
   );
-  return STAGES.map((stage) => {
-    const r = byStage.get(stage);
+  const sched = campaign.start_date
+    ? new Map(scheduleFor(campaign.start_date, campaign.batch_type).map((t) => [t.seq, t.send_date]))
+    : new Map<number, string>();
+
+  return touchesFor(campaign.batch_type).map((t) => {
+    const r = byStage.get(t.seq);
     return {
-      stage,
-      label: STAGE_LABELS[stage],
+      seq: t.seq,
+      label: t.label,
+      send_date: sched.get(t.seq) ?? null,
       pending: r?.pending ?? 0,
       sent: r?.sent ?? 0,
+      failed: r?.failed ?? 0,
+      canceled: r?.canceled ?? 0,
       total: r?.total ?? 0,
     };
   });
@@ -81,16 +88,21 @@ export interface StageRow {
   contact_id: number;
   email: string;
   name: string | null;
-  status: "pending" | "sent";
+  status: "pending" | "sending" | "sent" | "failed" | "canceled";
   sent_at: string | null;
+  attempts: number;
+  last_error: string | null;
+  sender: string | null; // pinned SMTP account email
 }
 
-export async function stageRows(campaignId: number, stage: Stage): Promise<StageRow[]> {
+export async function stageRows(campaignId: number, stage: number): Promise<StageRow[]> {
   const c = await db();
   const res = await c.execute({
-    sql: `SELECT s.id AS stage_id, s.contact_id, ct.email, ct.name, s.status, s.sent_at
+    sql: `SELECT s.id AS stage_id, s.contact_id, ct.email, ct.name, s.status, s.sent_at,
+                 s.attempts, s.last_error, sa.email AS sender
           FROM campaign_stages s
           JOIN contacts ct ON ct.id = s.contact_id
+          LEFT JOIN smtp_accounts sa ON sa.id = ct.smtp_account_id
           WHERE s.campaign_id = ? AND s.stage = ?
           ORDER BY ct.email`,
     args: [campaignId, stage],
@@ -109,7 +121,7 @@ export interface PendingSend {
 
 export async function pendingForStage(
   campaignId: number,
-  stage: Stage,
+  stage: number,
   limit?: number
 ): Promise<PendingSend[]> {
   const c = await db();
@@ -125,7 +137,23 @@ export async function pendingForStage(
   return rows<PendingSend>(res);
 }
 
-export async function pendingCountForStage(campaignId: number, stage: Stage): Promise<number> {
+/**
+ * Re-queue 'failed' rows so the scheduler tries them again (resets attempts +
+ * backoff). 'canceled' rows are left alone — those were suppressed after a hard
+ * bounce and shouldn't be re-mailed. Returns how many were re-queued.
+ */
+export async function requeueFailed(campaignId: number, stage?: number): Promise<number> {
+  const c = await db();
+  const res = await c.execute({
+    sql: `UPDATE campaign_stages
+          SET status='pending', attempts=0, last_error=NULL, next_attempt_at=NULL, claimed_at=NULL
+          WHERE campaign_id = ? AND status='failed'${stage ? " AND stage = ?" : ""}`,
+    args: stage ? [campaignId, stage] : [campaignId],
+  });
+  return res.rowsAffected ?? 0;
+}
+
+export async function pendingCountForStage(campaignId: number, stage: number): Promise<number> {
   const c = await db();
   const res = await c.execute({
     sql: `SELECT COUNT(*) AS n FROM campaign_stages
@@ -178,37 +206,46 @@ export async function templatesFor(campaignId: number): Promise<Record<number, E
 
 // ---- Tracking matrix ------------------------------------------------------
 
+export interface TouchCell {
+  status: "pending" | "sending" | "sent" | "failed" | "canceled";
+  sent_at: string | null;
+}
 export interface TrackingRow {
   contact_id: number;
   email: string;
   name: string | null;
-  s1_status: "pending" | "sent";
-  s1_sent_at: string | null;
-  s5_status: "pending" | "sent";
-  s5_sent_at: string | null;
-  s10_status: "pending" | "sent";
-  s10_sent_at: string | null;
+  touches: Record<number, TouchCell>; // keyed by touch seq (1..4)
 }
 
 export async function trackingMatrix(campaignId: number): Promise<TrackingRow[]> {
   const c = await db();
   const res = await c.execute({
-    sql: `SELECT
-            ct.id AS contact_id, ct.email, ct.name,
-            MAX(CASE WHEN s.stage = 1  THEN s.status  END) AS s1_status,
-            MAX(CASE WHEN s.stage = 1  THEN s.sent_at END) AS s1_sent_at,
-            MAX(CASE WHEN s.stage = 5  THEN s.status  END) AS s5_status,
-            MAX(CASE WHEN s.stage = 5  THEN s.sent_at END) AS s5_sent_at,
-            MAX(CASE WHEN s.stage = 10 THEN s.status  END) AS s10_status,
-            MAX(CASE WHEN s.stage = 10 THEN s.sent_at END) AS s10_sent_at
+    sql: `SELECT ct.id AS contact_id, ct.email, ct.name,
+                 s.stage, s.status, s.sent_at
           FROM contacts ct
           JOIN campaign_stages s ON s.contact_id = ct.id
           WHERE ct.campaign_id = ?
-          GROUP BY ct.id
-          ORDER BY ct.email`,
+          ORDER BY ct.email, s.stage`,
     args: [campaignId],
   });
-  return rows<TrackingRow>(res);
+
+  const byContact = new Map<number, TrackingRow>();
+  for (const r of rows<{
+    contact_id: number;
+    email: string;
+    name: string | null;
+    stage: number;
+    status: TouchCell["status"];
+    sent_at: string | null;
+  }>(res)) {
+    let row = byContact.get(r.contact_id);
+    if (!row) {
+      row = { contact_id: r.contact_id, email: r.email, name: r.name, touches: {} };
+      byContact.set(r.contact_id, row);
+    }
+    row.touches[r.stage] = { status: r.status, sent_at: r.sent_at };
+  }
+  return [...byContact.values()];
 }
 
 // ---- Database view --------------------------------------------------------
@@ -260,10 +297,100 @@ export async function databaseStats(): Promise<DatabaseStats> {
   return { total: r?.total ?? 0, sent: r?.sent ?? 0, failed: r?.failed ?? 0 };
 }
 
-// ---- Followup due dates (created_at + stage days) -------------------------
+// ---- Deliverability / engagement ------------------------------------------
 
-export function dueDate(createdAt: string, stageDays: number): string {
-  const base = new Date(createdAt.replace(" ", "T") + "Z");
-  base.setUTCDate(base.getUTCDate() + stageDays);
-  return base.toISOString().slice(0, 10);
+export interface DeliverabilityTotals {
+  sent: number;
+  failed: number;
+  canceled: number;
+  opens: number;
+  opensUnique: number;
+  clicksUnique: number;
+  replies: number;
+  unsubs: number;
+  suppressed: number;
+}
+
+export async function deliverabilityTotals(): Promise<DeliverabilityTotals> {
+  const c = await db();
+  const s = one<{ sent: number; failed: number; canceled: number }>(
+    await c.execute(`SELECT
+        SUM(CASE WHEN status='sent'     THEN 1 ELSE 0 END) AS sent,
+        SUM(CASE WHEN status='failed'   THEN 1 ELSE 0 END) AS failed,
+        SUM(CASE WHEN status='canceled' THEN 1 ELSE 0 END) AS canceled
+      FROM campaign_stages`)
+  );
+  const e = one<{
+    opens: number;
+    opens_unique: number;
+    clicks_unique: number;
+    replies: number;
+    unsubs: number;
+  }>(
+    await c.execute(`SELECT
+        SUM(CASE WHEN type='open'  THEN 1 ELSE 0 END) AS opens,
+        COUNT(DISTINCT CASE WHEN type='open'  THEN contact_id END) AS opens_unique,
+        COUNT(DISTINCT CASE WHEN type='click' THEN contact_id END) AS clicks_unique,
+        SUM(CASE WHEN type='reply' THEN 1 ELSE 0 END) AS replies,
+        SUM(CASE WHEN type='unsubscribe' THEN 1 ELSE 0 END) AS unsubs
+      FROM email_events`)
+  );
+  const supp = one<{ n: number }>(await c.execute("SELECT COUNT(*) AS n FROM suppressions"));
+  return {
+    sent: s?.sent ?? 0,
+    failed: s?.failed ?? 0,
+    canceled: s?.canceled ?? 0,
+    opens: e?.opens ?? 0,
+    opensUnique: e?.opens_unique ?? 0,
+    clicksUnique: e?.clicks_unique ?? 0,
+    replies: e?.replies ?? 0,
+    unsubs: e?.unsubs ?? 0,
+    suppressed: supp?.n ?? 0,
+  };
+}
+
+export interface CampaignDeliverability {
+  id: number;
+  name: string;
+  status: string;
+  sent: number;
+  failed: number;
+  opens_unique: number;
+  clicks_unique: number;
+  replies: number;
+  unsubs: number;
+}
+
+export async function deliverabilityByCampaign(): Promise<CampaignDeliverability[]> {
+  const c = await db();
+  const res = await c.execute(
+    `SELECT c.id, c.name, c.status,
+       (SELECT COUNT(*) FROM campaign_stages s WHERE s.campaign_id=c.id AND s.status='sent') AS sent,
+       (SELECT COUNT(*) FROM campaign_stages s WHERE s.campaign_id=c.id AND s.status='failed') AS failed,
+       (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='open') AS opens_unique,
+       (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='click') AS clicks_unique,
+       (SELECT COUNT(*) FROM email_events e WHERE e.campaign_id=c.id AND e.type='reply') AS replies,
+       (SELECT COUNT(*) FROM email_events e WHERE e.campaign_id=c.id AND e.type='unsubscribe') AS unsubs
+     FROM campaigns c
+     ORDER BY c.created_at DESC, c.id DESC`
+  );
+  return rows<CampaignDeliverability>(res);
+}
+
+export interface SenderHealthRow {
+  sender: string;
+  sent: number;
+  failed: number;
+}
+
+export async function senderHealth(): Promise<SenderHealthRow[]> {
+  const c = await db();
+  const res = await c.execute(
+    `SELECT smtp_used AS sender,
+        SUM(CASE WHEN status='sent'   THEN 1 ELSE 0 END) AS sent,
+        SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed
+     FROM email_logs WHERE smtp_used IS NOT NULL
+     GROUP BY smtp_used ORDER BY sent DESC`
+  );
+  return rows<SenderHealthRow>(res);
 }

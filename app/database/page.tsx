@@ -3,7 +3,12 @@ import { databaseRecords, databaseStats } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-const STAGE_LABEL: Record<number, string> = { 1: "Day 1", 5: "Day 5", 10: "Day 10" };
+const STAGE_LABEL: Record<number, string> = {
+  1: "Email 1",
+  2: "Email 2",
+  3: "Email 3",
+  4: "Email 4",
+};
 
 export default async function DatabasePage() {
   const records = await databaseRecords();

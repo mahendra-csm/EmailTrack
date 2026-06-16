@@ -328,6 +328,10 @@ tbody tr:hover {
   background: var(--amber-bg);
   color: var(--amber);
 }
+.badge.sending {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
 .badge.sent {
   background: var(--green-bg);
   color: var(--green);
@@ -339,6 +343,10 @@ tbody tr:hover {
 .badge.active {
   background: var(--green-bg);
   color: var(--green);
+}
+.badge.canceled {
+  background: #eee;
+  color: #777;
 }
 
 /* ---------- Stage sections ---------- */
