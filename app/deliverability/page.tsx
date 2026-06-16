@@ -5,7 +5,6 @@ import {
 } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
-
 function pct(n: number, d: number): string {
   if (!d) return "—";
   return `${((n / d) * 100).toFixed(1)}%`;

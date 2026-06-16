@@ -52,6 +52,9 @@ export interface SmtpAccount {
   daily_limit: number;
   used_today_count: number;
   last_reset_date: string | null;
+  hourly_limit: number;
+  used_hour_count: number;
+  hour_reset_at: string | null;
 }
 
 export interface Campaign {

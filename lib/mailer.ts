@@ -23,9 +23,15 @@ function transportFor(acc: SmtpAccount): Transporter {
   return t;
 }
 
-async function resetIfNewDay(acc: SmtpAccount): Promise<SmtpAccount> {
+/**
+ * Reset the daily and hourly windows if they've rolled over. Daily resets at the
+ * UTC date change; hourly resets once an hour has elapsed since hour_reset_at.
+ * The hourly cap is what keeps a single Hostinger mailbox from bursting and
+ * getting auto-disabled.
+ */
+async function resetWindows(acc: SmtpAccount): Promise<SmtpAccount> {
+  const c = await db();
   if (acc.last_reset_date !== today()) {
-    const c = await db();
     await c.execute({
       sql: "UPDATE smtp_accounts SET used_today_count = 0, last_reset_date = ? WHERE id = ?",
       args: [today(), acc.id],
@@ -33,19 +39,35 @@ async function resetIfNewDay(acc: SmtpAccount): Promise<SmtpAccount> {
     acc.used_today_count = 0;
     acc.last_reset_date = today();
   }
+  const hourMs = 60 * 60 * 1000;
+  const lastHour = acc.hour_reset_at ? Date.parse(acc.hour_reset_at.replace(" ", "T") + "Z") : 0;
+  if (!lastHour || Date.now() - lastHour >= hourMs) {
+    await c.execute({
+      sql: "UPDATE smtp_accounts SET used_hour_count = 0, hour_reset_at = datetime('now') WHERE id = ?",
+      args: [acc.id],
+    });
+    acc.used_hour_count = 0;
+    acc.hour_reset_at = new Date().toISOString().slice(0, 19).replace("T", " ");
+  }
   return acc;
+}
+
+function hasQuota(acc: SmtpAccount): boolean {
+  return acc.used_today_count < acc.daily_limit && acc.used_hour_count < acc.hourly_limit;
 }
 
 async function bumpUsage(accountId: number): Promise<void> {
   const c = await db();
   await c.execute({
-    sql: "UPDATE smtp_accounts SET used_today_count = used_today_count + 1 WHERE id = ?",
+    sql: "UPDATE smtp_accounts SET used_today_count = used_today_count + 1, used_hour_count = used_hour_count + 1 WHERE id = ?",
     args: [accountId],
   });
 }
 
 export interface AccountUsage extends SmtpAccount {
-  remaining: number;
+  remaining: number; // the binding cap right now (min of daily/hourly remaining)
+  daily_remaining: number;
+  hourly_remaining: number;
 }
 
 export async function accountsWithUsage(): Promise<AccountUsage[]> {
@@ -54,8 +76,15 @@ export async function accountsWithUsage(): Promise<AccountUsage[]> {
   const list = res.rows as unknown as SmtpAccount[];
   const out: AccountUsage[] = [];
   for (const raw of list) {
-    const acc = await resetIfNewDay(raw);
-    out.push({ ...acc, remaining: Math.max(0, acc.daily_limit - acc.used_today_count) });
+    const acc = await resetWindows(raw);
+    const dailyRem = Math.max(0, acc.daily_limit - acc.used_today_count);
+    const hourlyRem = Math.max(0, acc.hourly_limit - acc.used_hour_count);
+    out.push({
+      ...acc,
+      daily_remaining: dailyRem,
+      hourly_remaining: hourlyRem,
+      remaining: Math.min(dailyRem, hourlyRem),
+    });
   }
   return out;
 }
@@ -64,18 +93,30 @@ export async function getAccountById(id: number): Promise<SmtpAccount | undefine
   const c = await db();
   const res = await c.execute({ sql: "SELECT * FROM smtp_accounts WHERE id = ?", args: [id] });
   const acc = res.rows[0] as unknown as SmtpAccount | undefined;
-  return acc ? resetIfNewDay(acc) : undefined;
+  return acc ? resetWindows(acc) : undefined;
 }
 
-/** First account in the pool with quota left today, or null. */
+/**
+ * Pick a sender for a NEW (unpinned) contact: the account with the most hourly
+ * headroom that's still under both caps. Choosing the least-loaded box spreads
+ * volume evenly across the pool (round-robin) so no single mailbox bursts.
+ */
 export async function pickSmtp(): Promise<SmtpAccount | null> {
   const c = await db();
-  const res = await c.execute("SELECT * FROM smtp_accounts ORDER BY id");
+  const res = await c.execute("SELECT * FROM smtp_accounts");
+  const eligible: SmtpAccount[] = [];
   for (const raw of res.rows as unknown as SmtpAccount[]) {
-    const acc = await resetIfNewDay(raw);
-    if (acc.used_today_count < acc.daily_limit) return acc;
+    const acc = await resetWindows(raw);
+    if (hasQuota(acc)) eligible.push(acc);
   }
-  return null;
+  if (eligible.length === 0) return null;
+  eligible.sort(
+    (a, b) =>
+      a.used_hour_count - b.used_hour_count ||
+      a.used_today_count - b.used_today_count ||
+      a.id - b.id
+  );
+  return eligible[0];
 }
 
 export function renderTemplate(
@@ -133,7 +174,7 @@ export async function sendWith(
 ): Promise<SendResult> {
   const acc = await getAccountById(accountId);
   if (!acc) return { ok: false, smtpEmail: null, error: "ACCOUNT_NOT_FOUND", notFound: true };
-  if (acc.used_today_count >= acc.daily_limit) {
+  if (acc.used_today_count >= acc.daily_limit || acc.used_hour_count >= acc.hourly_limit) {
     return { ok: false, smtpEmail: acc.email, error: "ACCOUNT_EXHAUSTED", exhausted: true };
   }
 

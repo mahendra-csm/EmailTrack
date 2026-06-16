@@ -38,7 +38,10 @@ const SCHEMA = `
     password         TEXT    NOT NULL,
     daily_limit      INTEGER NOT NULL DEFAULT 2900,
     used_today_count INTEGER NOT NULL DEFAULT 0,
-    last_reset_date  TEXT
+    last_reset_date  TEXT,
+    hourly_limit     INTEGER NOT NULL DEFAULT 100,
+    used_hour_count  INTEGER NOT NULL DEFAULT 0,
+    hour_reset_at    TEXT
   );
   CREATE TABLE IF NOT EXISTS campaigns (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -137,6 +140,9 @@ async function migrate(c: Client): Promise<void> {
 
   const sm = await columns("smtp_accounts");
   await add("smtp_accounts", sm, "last_reply_poll", "last_reply_poll TEXT");
+  await add("smtp_accounts", sm, "hourly_limit", "hourly_limit INTEGER NOT NULL DEFAULT 100");
+  await add("smtp_accounts", sm, "used_hour_count", "used_hour_count INTEGER NOT NULL DEFAULT 0");
+  await add("smtp_accounts", sm, "hour_reset_at", "hour_reset_at TEXT");
 
   const st = await columns("campaign_stages");
   await add("campaign_stages", st, "send_date", "send_date TEXT");
@@ -158,13 +164,17 @@ async function seedSmtpFromEnv(c: Client): Promise<void> {
     if (!host || !email || !password) continue;
     const port = Number(process.env[`SMTP${n}_PORT`] ?? 587);
     const limit = Number(process.env[`SMTP${n}_LIMIT`] ?? 2900);
+    const hourly = Number(
+      process.env[`SMTP${n}_HOURLY_LIMIT`] ?? process.env.SMTP_HOURLY_LIMIT ?? 100
+    );
     await c.execute({
-      sql: `INSERT INTO smtp_accounts (host, port, email, password, daily_limit)
-            VALUES (?, ?, ?, ?, ?)
+      sql: `INSERT INTO smtp_accounts (host, port, email, password, daily_limit, hourly_limit)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(email) DO UPDATE SET
               host = excluded.host, port = excluded.port,
-              password = excluded.password, daily_limit = excluded.daily_limit`,
-      args: [host, port, email, password, limit],
+              password = excluded.password, daily_limit = excluded.daily_limit,
+              hourly_limit = excluded.hourly_limit`,
+      args: [host, port, email, password, limit, hourly],
     });
   }
 }

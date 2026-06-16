@@ -37,14 +37,16 @@ const DUE_WHERE = `s.status='pending' AND s.send_date <= date('now')
   AND (s.next_attempt_at IS NULL OR s.next_attempt_at <= datetime('now'))
   AND ca.status='active' AND ca.auto_send=1`;
 
-// A row is sendable only if the sender it MUST use has quota: the contact's
-// pinned account if set, otherwise any account in the pool.
+// A row is sendable only if the sender it MUST use has quota under BOTH the
+// daily and hourly caps: the contact's pinned account if set, otherwise any
+// account in the pool.
+const HAS_QUOTA = "sa.used_today_count < sa.daily_limit AND sa.used_hour_count < sa.hourly_limit";
 const SENDABLE = `(
   (ct.smtp_account_id IS NOT NULL AND EXISTS(
-     SELECT 1 FROM smtp_accounts sa WHERE sa.id = ct.smtp_account_id AND sa.used_today_count < sa.daily_limit))
+     SELECT 1 FROM smtp_accounts sa WHERE sa.id = ct.smtp_account_id AND ${HAS_QUOTA}))
   OR
   (ct.smtp_account_id IS NULL AND EXISTS(
-     SELECT 1 FROM smtp_accounts sa WHERE sa.used_today_count < sa.daily_limit))
+     SELECT 1 FROM smtp_accounts sa WHERE ${HAS_QUOTA}))
 )`;
 
 export async function dueCount(c: Client): Promise<number> {
@@ -220,12 +222,17 @@ export async function sendStageRow(
     // Unpinned (or pinned account vanished): choose one and pin it on success.
     if (preferredAccountId) {
       const pref = await getAccountById(preferredAccountId);
-      if (pref && pref.used_today_count < pref.daily_limit) account = pref;
+      if (pref && pref.used_today_count < pref.daily_limit && pref.used_hour_count < pref.hourly_limit)
+        account = pref;
     }
     if (!account) account = (await pickSmtp()) ?? undefined;
   }
-  if (!account || account.used_today_count >= account.daily_limit) {
-    // Required sender has no quota right now — release for the next tick.
+  if (
+    !account ||
+    account.used_today_count >= account.daily_limit ||
+    account.used_hour_count >= account.hourly_limit
+  ) {
+    // Required sender is at its daily or hourly cap — release for a later tick.
     await c.execute({
       sql: "UPDATE campaign_stages SET status='pending', claimed_at=NULL WHERE id=?",
       args: [row.id],

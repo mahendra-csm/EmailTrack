@@ -7,11 +7,13 @@ export default function SendersPage() {
         <div>
           <h1>Senders</h1>
           <p className="muted" style={{ margin: 0 }}>
-            Live daily usage per SMTP account. Counters reset at midnight (UTC).
+            Live daily &amp; hourly usage per SMTP account. The hourly cap keeps a
+            mailbox from bursting and getting disabled — lower it if Hostinger
+            still blocks a box.
           </p>
         </div>
       </div>
-      <SmtpUsage />
+      <SmtpUsage editable />
     </div>
   );
 }
