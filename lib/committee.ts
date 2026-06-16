@@ -73,27 +73,36 @@ export const COMMITTEE: CommitteeMember[] = [
 
 export const COMMITTEE_HTML = `<html>
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
-<body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#2c363a;background:#ffffff;margin:0;padding:20px;">
-<h2 style="color:#1a7f37;margin:0 0 12px;">🎉 Your OneGrasp Referral Code is Now Active!</h2>
+<body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#000000;background:#ffffff;margin:0;padding:20px;">
+<p><strong>Your OneGrasp Referral Code is Now Active</strong></p>
 <p>Dear Prof. {{name}},</p>
 <p>Thank you for being a valued <strong>Scientific Committee Member</strong>.</p>
-<p>🔖 <strong>Your Exclusive Referral Coupon Code:</strong></p>
-<p style="font-size:20px;font-weight:bold;color:#00acff;letter-spacing:1px;">{{coupon}}</p>
-<p>🔗 <strong>Registration Link:</strong><br />
-<a href="https://onegrasp.com/events/exclusive" style="color:#00acff;">https://onegrasp.com/events/exclusive</a></p>
-<p>🚨 <strong>Limited Launch Offer – First Come, First Served!</strong></p>
+<p><strong>Your Exclusive Referral Coupon Code:</strong> <strong>{{coupon}}</strong></p>
+<p><strong>Registration Link:</strong> <a href="https://onegrasp.com/events/exclusive">https://onegrasp.com/events/exclusive</a></p>
+<p><strong>Limited Launch Offer - First Come, First Served</strong></p>
 <p>The first <strong>50 listeners</strong> across the Scientific Member Referral Program who register using any Scientific Member referral coupon code will receive:</p>
-<ul><li>✅ Free Conference Attendance</li><li>✅ Conference Participation Certificate</li></ul>
-<p>⏳ Only a few slots are available and will be allocated on a first-come, first-served basis.</p>
+<ul>
+<li><strong>Free Conference Attendance</strong></li>
+<li><strong>Conference Participation Certificate</strong></li>
+</ul>
+<p>Only a few slots are available and will be allocated on a first-come, first-served basis.</p>
 <p>After the first 50 listener registrations are filled:</p>
-<ul><li>Listener registration will be available at the applicable fee.</li><li>Your referral coupon code will continue to provide an exclusive discount.</li></ul>
-<p>📢 <strong>We encourage you to share your code today with:</strong></p>
-<ul><li>Students</li><li>Research Scholars</li><li>Faculty Members</li><li>Researchers</li><li>Professional Contacts</li></ul>
+<ul>
+<li>Listener registration will be available at the applicable fee.</li>
+<li>Your referral coupon code will continue to provide an exclusive discount.</li>
+</ul>
+<p><strong>We encourage you to share your code today with:</strong></p>
+<ul>
+<li>Students</li>
+<li>Research Scholars</li>
+<li>Faculty Members</li>
+<li>Researchers</li>
+<li>Professional Contacts</li>
+</ul>
 <p>The earlier your network registers, the greater their opportunity to secure the limited complimentary listener benefits.</p>
 <p>Thank you for supporting the global research community.</p>
 <p>Warm Regards,<br /><strong>OneGrasp Conferences</strong></p>
-<p style="font-size:11px;color:#888888;border-top:1px solid #dddddd;padding-top:8px;margin-top:18px;">
-If you no longer wish to receive these emails, <a href="{{unsubscribe_url}}" style="color:#888888;">unsubscribe here</a>.</p>
+<p style="font-size:11px;color:#666666;border-top:1px solid #cccccc;padding-top:8px;margin-top:18px;">If you no longer wish to receive these emails, <a href="{{unsubscribe_url}}" style="color:#666666;">unsubscribe here</a>.</p>
 </body></html>`;
 
 type Row = Record<string, unknown>;
