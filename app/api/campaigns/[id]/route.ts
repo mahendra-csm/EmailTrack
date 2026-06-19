@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCampaign, stageSummaries, stageRows } from "@/lib/queries";
+import { getCampaign, stageSummaries, stageRows, campaignDeliverability } from "@/lib/queries";
 import { scheduleFor } from "@/lib/schedule";
 import { touchesFor } from "@/lib/types";
 
@@ -30,5 +30,7 @@ export async function GET(
     }))
   );
 
-  return NextResponse.json({ campaign, summaries, stages });
+  const deliverability = await campaignDeliverability(campaignId);
+
+  return NextResponse.json({ campaign, summaries, stages, deliverability });
 }

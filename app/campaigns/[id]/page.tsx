@@ -32,6 +32,16 @@ interface StageBlock {
   due: string | null;
   rows: StageRow[];
 }
+interface Deliverability {
+  sent: number;
+  failed: number;
+  opens: number;
+  opensUnique: number;
+  clicksUnique: number;
+  replies: number;
+  unsubs: number;
+  bounces: number;
+}
 interface Detail {
   campaign: {
     id: number;
@@ -45,6 +55,12 @@ interface Detail {
   };
   summaries: Summary[];
   stages: StageBlock[];
+  deliverability: Deliverability;
+}
+
+function rate(n: number, d: number): string {
+  if (!d) return "—";
+  return `${((n / d) * 100).toFixed(1)}%`;
 }
 interface BatchResult {
   sent: number;
@@ -256,6 +272,38 @@ export default function CampaignDetailPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Per-campaign deliverability */}
+      <h2 style={{ fontSize: 15, margin: "18px 2px 8px" }}>Deliverability</h2>
+      <div className="grid cards-row" style={{ marginBottom: 8 }}>
+        <div className="stat">
+          <div className="label">Sent</div>
+          <div className="value">{data.deliverability.sent.toLocaleString()}</div>
+        </div>
+        <div className="stat">
+          <div className="label">Open rate</div>
+          <div className="value">{rate(data.deliverability.opensUnique, data.deliverability.sent)}</div>
+          <div className="muted" style={{ fontSize: 12 }}>
+            {data.deliverability.opensUnique.toLocaleString()} opened
+          </div>
+        </div>
+        <div className="stat">
+          <div className="label">Click rate</div>
+          <div className="value">{rate(data.deliverability.clicksUnique, data.deliverability.sent)}</div>
+        </div>
+        <div className="stat">
+          <div className="label">Replies</div>
+          <div className="value">{data.deliverability.replies.toLocaleString()}</div>
+        </div>
+        <div className="stat">
+          <div className="label">Bounced</div>
+          <div className="value">{data.deliverability.bounces.toLocaleString()}</div>
+        </div>
+        <div className="stat">
+          <div className="label">Unsub</div>
+          <div className="value">{data.deliverability.unsubs.toLocaleString()}</div>
+        </div>
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>

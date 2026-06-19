@@ -18,6 +18,34 @@ import { claimDue, dueCount, reclaimStale, sendStageRow, templateCache } from ".
 const DELAY_MS = Number(process.env.SEND_DELAY_MS ?? 400);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+function parseHHMM(s?: string): number | null {
+  const m = s?.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/**
+ * Daily send window (UTC). If SEND_WINDOW_START is set, the scheduler only sends
+ * between START and END each day — so every batch (including follow-ups you
+ * don't re-upload) goes out at the same local hour instead of at UTC midnight.
+ * e.g. 9:30 AM IST = 04:00 UTC -> SEND_WINDOW_START="04:00".
+ */
+function sendWindow(): { ok: boolean; message?: string } {
+  const start = parseHHMM(process.env.SEND_WINDOW_START);
+  const end = parseHHMM(process.env.SEND_WINDOW_END);
+  if (start == null && end == null) return { ok: true };
+  const now = new Date();
+  const mins = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const s = start ?? 0;
+  const e = end ?? 24 * 60;
+  const inside = s <= e ? mins >= s && mins < e : mins >= s || mins < e; // handles wrap past midnight
+  if (inside) return { ok: true };
+  return {
+    ok: false,
+    message: `Outside send window (UTC ${process.env.SEND_WINDOW_START ?? "00:00"}–${process.env.SEND_WINDOW_END ?? "24:00"}).`,
+  };
+}
+
 export interface TickResult {
   ok: boolean;
   claimed: number;
@@ -33,6 +61,12 @@ export interface TickResult {
 
 export async function runDueSends(maxCount = 50): Promise<TickResult> {
   const c = await db();
+
+  // Respect the daily send window (e.g. start at 9:30 AM local) before doing work.
+  const win = sendWindow();
+  if (!win.ok) {
+    return { ok: true, claimed: 0, sent: 0, failed: 0, retry: 0, canceled: 0, noQuota: 0, remaining: 0, message: win.message };
+  }
 
   // Reset any account whose counter is from a previous day, so quota checks in
   // the claim SQL see fresh numbers.

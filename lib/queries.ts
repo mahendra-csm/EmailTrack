@@ -353,6 +353,59 @@ export async function deliverabilityTotals(): Promise<DeliverabilityTotals> {
   };
 }
 
+export interface CampaignDelivStats {
+  sent: number;
+  failed: number;
+  opens: number;
+  opensUnique: number;
+  clicksUnique: number;
+  replies: number;
+  unsubs: number;
+  bounces: number;
+}
+
+/** Deliverability totals for a single campaign (for its own page). */
+export async function campaignDeliverability(campaignId: number): Promise<CampaignDelivStats> {
+  const c = await db();
+  const s = one<{ sent: number; failed: number }>(
+    await c.execute({
+      sql: `SELECT SUM(CASE WHEN status='sent' THEN 1 ELSE 0 END) AS sent,
+                   SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed
+            FROM campaign_stages WHERE campaign_id = ?`,
+      args: [campaignId],
+    })
+  );
+  const e = one<{
+    opens: number;
+    opens_unique: number;
+    clicks_unique: number;
+    replies: number;
+    unsubs: number;
+    bounces: number;
+  }>(
+    await c.execute({
+      sql: `SELECT SUM(CASE WHEN type='open'  THEN 1 ELSE 0 END) AS opens,
+                   COUNT(DISTINCT CASE WHEN type='open'  THEN contact_id END) AS opens_unique,
+                   COUNT(DISTINCT CASE WHEN type='click' THEN contact_id END) AS clicks_unique,
+                   SUM(CASE WHEN type='reply'  THEN 1 ELSE 0 END) AS replies,
+                   SUM(CASE WHEN type='unsubscribe' THEN 1 ELSE 0 END) AS unsubs,
+                   SUM(CASE WHEN type='bounce' THEN 1 ELSE 0 END) AS bounces
+            FROM email_events WHERE campaign_id = ?`,
+      args: [campaignId],
+    })
+  );
+  return {
+    sent: s?.sent ?? 0,
+    failed: s?.failed ?? 0,
+    opens: e?.opens ?? 0,
+    opensUnique: e?.opens_unique ?? 0,
+    clicksUnique: e?.clicks_unique ?? 0,
+    replies: e?.replies ?? 0,
+    unsubs: e?.unsubs ?? 0,
+    bounces: e?.bounces ?? 0,
+  };
+}
+
 export interface CampaignDeliverability {
   id: number;
   name: string;

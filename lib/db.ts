@@ -171,13 +171,14 @@ async function seedSmtpFromEnv(c: Client): Promise<void> {
     const hourly = Number(
       process.env[`SMTP${n}_HOURLY_LIMIT`] ?? process.env.SMTP_HOURLY_LIMIT ?? 100
     );
+    // NOTE: limits are set only on first insert. On conflict we refresh creds
+    // but DO NOT touch daily_limit/hourly_limit — those are tuned via the Senders
+    // page / DB and must not be clobbered by a reseed.
     await c.execute({
       sql: `INSERT INTO smtp_accounts (host, port, email, password, daily_limit, hourly_limit)
             VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(email) DO UPDATE SET
-              host = excluded.host, port = excluded.port,
-              password = excluded.password, daily_limit = excluded.daily_limit,
-              hourly_limit = excluded.hourly_limit`,
+              host = excluded.host, port = excluded.port, password = excluded.password`,
       args: [host, port, email, password, limit, hourly],
     });
   }
