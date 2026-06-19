@@ -74,10 +74,18 @@ export async function createCampaign(args: {
       args: [campaignId, t.seq, tpl.subject, tpl.html],
     });
   }
-  for (const ct of args.contacts) {
+  // Insert contacts as chunked multi-row INSERTs (300 rows = 900 params each,
+  // safely under SQLite's variable limit). This turns a 10k-row upload from
+  // ~10,000 statements into ~34 — far faster and well within request limits.
+  const CHUNK = 300;
+  for (let i = 0; i < args.contacts.length; i += CHUNK) {
+    const chunk = args.contacts.slice(i, i + CHUNK);
+    const values = chunk.map(() => "(?, ?, ?)").join(", ");
+    const rowArgs: (string | number | null)[] = [];
+    for (const ct of chunk) rowArgs.push(campaignId, ct.email, ct.name);
     stmts.push({
-      sql: "INSERT INTO contacts (campaign_id, email, name) VALUES (?, ?, ?)",
-      args: [campaignId, ct.email, ct.name],
+      sql: `INSERT INTO contacts (campaign_id, email, name) VALUES ${values}`,
+      args: rowArgs,
     });
   }
   // Stage rows generated from the contacts we just inserted — one per touch,

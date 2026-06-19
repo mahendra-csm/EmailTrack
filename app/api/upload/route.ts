@@ -4,6 +4,7 @@ import { createCampaign } from "@/lib/createCampaign";
 import { BatchType } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 60; // large (10k+) uploads need time to insert
 
 export async function POST(req: NextRequest) {
   try {
