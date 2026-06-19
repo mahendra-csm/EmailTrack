@@ -28,7 +28,9 @@ async function handle(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
-  const batch = Math.min(Math.max(Number(process.env.CRON_BATCH_SIZE) || 50, 1), 200);
+  // Keep modest: at ~1-1.5s per send, ~25 fits inside the 60s function limit.
+  // The scheduler also enforces a time budget, so this is just the claim size.
+  const batch = Math.min(Math.max(Number(process.env.CRON_BATCH_SIZE) || 25, 1), 200);
   const result = await runDueSends(batch);
   return NextResponse.json(result);
 }

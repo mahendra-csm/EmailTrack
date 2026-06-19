@@ -16,6 +16,9 @@ import { claimDue, dueCount, reclaimStale, sendStageRow, templateCache } from ".
 // ---------------------------------------------------------------------------
 
 const DELAY_MS = Number(process.env.SEND_DELAY_MS ?? 400);
+// Stop a tick well before the 60s serverless limit and release whatever's left,
+// so the function never times out and rows don't get stuck mid-send.
+const MAX_TICK_MS = Number(process.env.MAX_TICK_MS ?? 45000);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function parseHHMM(s?: string): number | null {
@@ -94,14 +97,30 @@ export async function runDueSends(maxCount = 50): Promise<TickResult> {
   }
 
   const getTemplates = templateCache();
+  const startedAt = Date.now();
   let sent = 0;
   let failed = 0;
   let retry = 0;
   let canceled = 0;
   let noQuota = 0;
   let smtp: string | undefined;
+  let message: string | undefined;
 
   for (let i = 0; i < claimed.length; i++) {
+    // Out of time budget — release the unsent remainder so nothing stays stuck
+    // in 'sending' and the function returns before Vercel kills it.
+    if (Date.now() - startedAt > MAX_TICK_MS) {
+      const restIds = claimed.slice(i).map((r) => r.id);
+      await c.execute({
+        sql: `UPDATE campaign_stages SET status='pending', claimed_at=NULL WHERE id IN (${restIds
+          .map(() => "?")
+          .join(",")})`,
+        args: restIds,
+      });
+      message = "Time budget reached — remainder released for the next tick.";
+      break;
+    }
+
     const o = await sendStageRow(c, claimed[i], getTemplates);
     if (o.outcome === "sent") {
       sent++;
@@ -126,5 +145,5 @@ export async function runDueSends(maxCount = 50): Promise<TickResult> {
   );
 
   const remaining = await dueCount(c);
-  return { ok: true, claimed: claimed.length, sent, failed, retry, canceled, noQuota, remaining, smtp };
+  return { ok: true, claimed: claimed.length, sent, failed, retry, canceled, noQuota, remaining, smtp, message };
 }
