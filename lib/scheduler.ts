@@ -15,10 +15,12 @@ import { claimDue, dueCount, reclaimStale, sendStageRow, templateCache } from ".
 // per row in sendStageRow.
 // ---------------------------------------------------------------------------
 
-const DELAY_MS = Number(process.env.SEND_DELAY_MS ?? 400);
-// Stop a tick well before the 60s serverless limit and release whatever's left,
-// so the function never times out and rows don't get stuck mid-send.
-const MAX_TICK_MS = Number(process.env.MAX_TICK_MS ?? 45000);
+// SMTP latency already paces sends (~seconds each) and the hourly cap governs
+// the overall rate, so the inter-send delay is small.
+const DELAY_MS = Number(process.env.SEND_DELAY_MS ?? 150);
+// Stop a tick well before the 60s serverless limit (with headroom for the
+// wrap-up queries) and release whatever's left, so it never times out.
+const MAX_TICK_MS = Number(process.env.MAX_TICK_MS ?? 40000);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function parseHHMM(s?: string): number | null {
