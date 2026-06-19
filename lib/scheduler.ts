@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { accountsWithUsage } from "./mailer";
-import { claimDue, dueCount, reclaimStale, sendStageRow, templateCache } from "./sendCore";
+import { claimDue, dueCount, reclaimStale, sendStageRow, templateCache, ClaimRow } from "./sendCore";
 
 // ---------------------------------------------------------------------------
 // The automatic heartbeat. An external scheduler (cron-job.org) pings
@@ -9,7 +9,9 @@ import { claimDue, dueCount, reclaimStale, sendStageRow, templateCache } from ".
 //   1. Reset SMTP daily counters if the date rolled over.
 //   2. Reclaim rows stuck 'sending' from a crashed/overlapping tick.
 //   3. Atomically claim a batch of due + sendable rows (no double-send).
-//   4. Send each via the shared core (pinning + retry + suppression).
+//   4. Bucket them by sending box and send ALL boxes IN PARALLEL (each box
+//      serial through its own queue) — so N boxes give ~Nx throughput despite
+//      slow per-send SMTP latency.
 //
 // Large lists drain across successive ticks; quotas and pinning are enforced
 // per row in sendStageRow.
@@ -74,8 +76,8 @@ export async function runDueSends(maxCount = 50): Promise<TickResult> {
   }
 
   // Reset any account whose counter is from a previous day, so quota checks in
-  // the claim SQL see fresh numbers.
-  await accountsWithUsage();
+  // the claim SQL see fresh numbers. Keep the snapshot for sender assignment.
+  const usage = await accountsWithUsage();
   await reclaimStale(c);
 
   const due = await dueCount(c);
@@ -100,6 +102,58 @@ export async function runDueSends(maxCount = 50): Promise<TickResult> {
 
   const getTemplates = templateCache();
   const startedAt = Date.now();
+  const outOfTime = () => Date.now() - startedAt > MAX_TICK_MS;
+  const release = async (ids: number[]) => {
+    if (ids.length === 0) return;
+    await c.execute({
+      sql: `UPDATE campaign_stages SET status='pending', claimed_at=NULL WHERE id IN (${ids
+        .map(() => "?")
+        .join(",")})`,
+      args: ids,
+    });
+  };
+
+  // Each claimed contact's pinned sender (follow-ups must reuse it).
+  const contactIds = [...new Set(claimed.map((r) => r.contact_id))];
+  const pinRes = await c.execute({
+    sql: `SELECT id, smtp_account_id FROM contacts WHERE id IN (${contactIds.map(() => "?").join(",")})`,
+    args: contactIds,
+  });
+  const pinOf = new Map<number, number | null>();
+  for (const r of pinRes.rows as unknown as { id: number; smtp_account_id: number | null }[]) {
+    pinOf.set(Number(r.id), r.smtp_account_id == null ? null : Number(r.smtp_account_id));
+  }
+
+  // Pool boxes available for unpinned (first-touch) contacts, least-loaded first.
+  const pool = usage
+    .filter((a) => a.in_pool === 1 && a.remaining > 0)
+    .sort((a, b) => a.used_hour_count - b.used_hour_count);
+
+  // Bucket rows by the box they'll send from: pinned -> its box, unpinned ->
+  // round-robin across the pool. Each box becomes one serial queue; the queues
+  // run IN PARALLEL so all boxes send at the same time.
+  const buckets = new Map<number, ClaimRow[]>();
+  const noBox: number[] = [];
+  let rr = 0;
+  for (const row of claimed) {
+    const pin = pinOf.get(row.contact_id) ?? null;
+    let acct: number | null;
+    if (pin != null) acct = pin;
+    else if (pool.length > 0) acct = pool[rr++ % pool.length].id;
+    else acct = null;
+    if (acct == null) {
+      noBox.push(row.id);
+      continue;
+    }
+    let arr = buckets.get(acct);
+    if (!arr) {
+      arr = [];
+      buckets.set(acct, arr);
+    }
+    arr.push(row);
+  }
+  await release(noBox);
+
   let sent = 0;
   let failed = 0;
   let retry = 0;
@@ -108,33 +162,28 @@ export async function runDueSends(maxCount = 50): Promise<TickResult> {
   let smtp: string | undefined;
   let message: string | undefined;
 
-  for (let i = 0; i < claimed.length; i++) {
-    // Out of time budget — release the unsent remainder so nothing stays stuck
-    // in 'sending' and the function returns before Vercel kills it.
-    if (Date.now() - startedAt > MAX_TICK_MS) {
-      const restIds = claimed.slice(i).map((r) => r.id);
-      await c.execute({
-        sql: `UPDATE campaign_stages SET status='pending', claimed_at=NULL WHERE id IN (${restIds
-          .map(() => "?")
-          .join(",")})`,
-        args: restIds,
-      });
-      message = "Time budget reached — remainder released for the next tick.";
-      break;
-    }
+  await Promise.all(
+    [...buckets.entries()].map(async ([accountId, rows]) => {
+      for (let i = 0; i < rows.length; i++) {
+        if (outOfTime()) {
+          await release(rows.slice(i).map((r) => r.id));
+          message = "Time budget reached — remainder released for the next tick.";
+          return;
+        }
+        const o = await sendStageRow(c, rows[i], getTemplates, accountId);
+        if (o.outcome === "sent") {
+          sent++;
+          smtp = o.smtp ?? smtp;
+        } else if (o.outcome === "failed") failed++;
+        else if (o.outcome === "retry") retry++;
+        else if (o.outcome === "canceled") canceled++;
+        else if (o.outcome === "no_quota") noQuota++;
 
-    const o = await sendStageRow(c, claimed[i], getTemplates);
-    if (o.outcome === "sent") {
-      sent++;
-      smtp = o.smtp ?? smtp;
-    } else if (o.outcome === "failed") failed++;
-    else if (o.outcome === "retry") retry++;
-    else if (o.outcome === "canceled") canceled++;
-    else if (o.outcome === "no_quota") noQuota++;
-
-    // Throttle only between real sends.
-    if (DELAY_MS > 0 && o.outcome === "sent" && i < claimed.length - 1) await sleep(DELAY_MS);
-  }
+        // Small gap between a single box's own sends; boxes still run in parallel.
+        if (DELAY_MS > 0 && o.outcome === "sent" && i < rows.length - 1) await sleep(DELAY_MS);
+      }
+    })
+  );
 
   // Mark campaigns whose every stage is done (sent/failed/canceled) as completed.
   await c.execute(

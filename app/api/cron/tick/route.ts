@@ -27,7 +27,7 @@ async function handle(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
-  const batch = Math.min(Math.max(Number(process.env.CRON_BATCH_SIZE) || 25, 1), 200);
+  const batch = Math.min(Math.max(Number(process.env.CRON_BATCH_SIZE) || 60, 1), 300);
 
   // Run the send in the background so the cron request returns right away.
   after(async () => {
