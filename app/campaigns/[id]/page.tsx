@@ -179,6 +179,17 @@ export default function CampaignDetailPage() {
     }
   }
 
+  async function toggleAutoSend() {
+    if (!data) return;
+    const next = data.campaign.auto_send === 1 ? 0 : 1;
+    await fetch(`/api/campaigns/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auto_send: next }),
+    });
+    await loadDetail();
+  }
+
   async function retryFailed() {
     setProgress("Re-queuing failed…");
     const res = await fetch(`/api/campaigns/${id}/retry`, {
@@ -210,6 +221,13 @@ export default function CampaignDetailPage() {
           </p>
         </div>
         <div className="row-actions">
+          <button
+            className="btn secondary"
+            onClick={toggleAutoSend}
+            title={data.campaign.auto_send === 1 ? "Stop auto-sending this campaign" : "Resume auto-sending"}
+          >
+            {data.campaign.auto_send === 1 ? "⏸ Pause sending" : "▶ Resume sending"}
+          </button>
           <Link href={`/campaigns/${id}/tracking`} className="btn secondary">
             Tracking
           </Link>
