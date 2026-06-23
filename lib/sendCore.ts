@@ -1,4 +1,4 @@
-import type { Client } from "@libsql/client";
+import type { Db } from "./db";
 import { getAccountById, pickSmtp, renderTemplate, sendWith } from "./mailer";
 import { templatesFor } from "./queries";
 import { EmailTemplate } from "./types";
@@ -51,7 +51,7 @@ const SENDABLE = `(
      SELECT 1 FROM smtp_accounts sa WHERE sa.in_pool = 1 AND ${HAS_QUOTA}))
 )`;
 
-export async function dueCount(c: Client): Promise<number> {
+export async function dueCount(c: Db): Promise<number> {
   const res = await c.execute(
     `SELECT COUNT(*) AS n FROM campaign_stages s
      JOIN campaigns ca ON ca.id = s.campaign_id WHERE ${DUE_WHERE}`
@@ -59,7 +59,7 @@ export async function dueCount(c: Client): Promise<number> {
   return Number((res.rows[0] as unknown as { n: number })?.n ?? 0);
 }
 
-export async function reclaimStale(c: Client): Promise<void> {
+export async function reclaimStale(c: Db): Promise<void> {
   await c.execute(
     `UPDATE campaign_stages SET status='pending', claimed_at=NULL
      WHERE status='sending' AND (claimed_at IS NULL OR claimed_at < datetime('now','-5 minutes'))`
@@ -67,7 +67,7 @@ export async function reclaimStale(c: Client): Promise<void> {
 }
 
 /** Atomically claim a cross-campaign batch of due+sendable rows. */
-export async function claimDue(c: Client, maxCount: number): Promise<ClaimRow[]> {
+export async function claimDue(c: Db, maxCount: number): Promise<ClaimRow[]> {
   const res = await c.execute({
     sql: `UPDATE campaign_stages SET status='sending', claimed_at=datetime('now')
           WHERE id IN (
@@ -86,7 +86,7 @@ export async function claimDue(c: Client, maxCount: number): Promise<ClaimRow[]>
 
 /** Atomically claim a batch within one campaign+stage (manual "send now"). */
 export async function claimStage(
-  c: Client,
+  c: Db,
   campaignId: number,
   stage: number,
   maxCount: number
@@ -122,7 +122,7 @@ export function templateCache(): TemplateProvider {
 }
 
 async function log(
-  c: Client,
+  c: Db,
   row: ClaimRow,
   smtp: string | null,
   status: "sent" | "failed",
@@ -147,7 +147,7 @@ interface ContactRow {
 
 /** Cancel this touch + the contact's remaining touches, e.g. after opt-out. */
 async function cancelContactFrom(
-  c: Client,
+  c: Db,
   rowId: number,
   contactId: number,
   stage: number,
@@ -169,7 +169,7 @@ async function cancelContactFrom(
  * suppression, status + log writes. Returns what happened.
  */
 export async function sendStageRow(
-  c: Client,
+  c: Db,
   row: ClaimRow,
   getTemplates: TemplateProvider,
   preferredAccountId?: number

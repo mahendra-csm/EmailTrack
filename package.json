@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",
+    "@neondatabase/serverless": "^1.1.0",
     "imapflow": "^1.4.0",
     "next": "^15.1.6",
     "nodemailer": "^6.10.0",

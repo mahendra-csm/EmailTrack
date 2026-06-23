@@ -59,10 +59,10 @@ export async function createCampaign(args: {
 
   const campaign = await c.execute({
     sql: `INSERT INTO campaigns (name, status, batch_type, start_date, auto_send, country)
-          VALUES (?, 'active', ?, ?, 1, ?)`,
+          VALUES (?, 'active', ?, ?, 1, ?) RETURNING id`,
     args: [args.name, args.batchType, startDate, args.country?.trim() || null],
   });
-  const campaignId = Number(campaign.lastInsertRowid);
+  const campaignId = Number((campaign.rows[0] as { id: number }).id);
 
   const stmts: { sql: string; args: (string | number | null)[] }[] = [];
 

@@ -28,7 +28,7 @@ export async function suppress(email: string, reason: string, campaignId?: numbe
   const c = await db();
   await c.execute({
     sql: `INSERT INTO suppressions (email, reason, campaign_id) VALUES (?, ?, ?)
-          ON CONFLICT(email) DO UPDATE SET reason=excluded.reason`,
+          ON CONFLICT (email) DO UPDATE SET reason=EXCLUDED.reason`,
     args: [email.toLowerCase().trim(), reason, campaignId ?? null],
   });
 }

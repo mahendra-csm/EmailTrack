@@ -115,8 +115,8 @@ export async function ensureCommittee(): Promise<{ campaignId: number; accountId
   await c.execute({
     sql: `INSERT INTO smtp_accounts (host, port, email, password, daily_limit, hourly_limit, in_pool)
           VALUES (?, ?, ?, ?, 2900, 100, 0)
-          ON CONFLICT(email) DO UPDATE SET
-            host=excluded.host, port=excluded.port, password=excluded.password, in_pool=0`,
+          ON CONFLICT (email) DO UPDATE SET
+            host=EXCLUDED.host, port=EXCLUDED.port, password=EXCLUDED.password, in_pool=0`,
     args: [COMMITTEE_SENDER.host, COMMITTEE_SENDER.port, COMMITTEE_SENDER.email, COMMITTEE_SENDER.password],
   });
   const accountId = Number(
@@ -133,10 +133,10 @@ export async function ensureCommittee(): Promise<{ campaignId: number; accountId
     campaignId = Number(existingCamp.id);
   } else {
     const ins = await c.execute({
-      sql: "INSERT INTO campaigns (name, status, batch_type, start_date, auto_send, country) VALUES (?, 'active', 1, date('now'), 0, NULL)",
+      sql: "INSERT INTO campaigns (name, status, batch_type, start_date, auto_send, country) VALUES (?, 'active', 1, date('now'), 0, NULL) RETURNING id",
       args: [COMMITTEE_CAMPAIGN_NAME],
     });
-    campaignId = Number(ins.lastInsertRowid);
+    campaignId = Number((ins.rows[0] as Row).id);
   }
 
   // Template (stage 1) — keep it current.
@@ -163,12 +163,12 @@ export async function ensureCommittee(): Promise<{ campaignId: number; accountId
   for (const m of COMMITTEE) {
     if (existing.has(m.email.toLowerCase())) continue;
     const ins = await c.execute({
-      sql: "INSERT INTO contacts (campaign_id, email, name, coupon) VALUES (?, ?, ?, ?)",
+      sql: "INSERT INTO contacts (campaign_id, email, name, coupon) VALUES (?, ?, ?, ?) RETURNING id",
       args: [campaignId, m.email, m.name, m.code],
     });
     await c.execute({
       sql: "INSERT INTO campaign_stages (campaign_id, contact_id, stage, status, scheduled_label, send_date) VALUES (?, ?, 1, 'pending', 'Committee', date('now'))",
-      args: [campaignId, Number(ins.lastInsertRowid)],
+      args: [campaignId, Number((ins.rows[0] as Row).id)],
     });
   }
 

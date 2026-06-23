@@ -1,5 +1,5 @@
 import { ImapFlow } from "imapflow";
-import type { Client } from "@libsql/client";
+import type { Db } from "./db";
 import { db } from "./db";
 import { markReplied, processBounce } from "./events";
 
@@ -49,7 +49,7 @@ function looksLikeBounce(from: string, name: string, subject: string): boolean {
 }
 
 /** Pull the failed recipient(s) out of a bounce, keeping only real contacts. */
-export async function bounceTargets(c: Client, source: string): Promise<string[]> {
+export async function bounceTargets(c: Db, source: string): Promise<string[]> {
   const found = new Set<string>();
   const add = (s?: string) => {
     const m = s?.match(EMAIL_RE);
