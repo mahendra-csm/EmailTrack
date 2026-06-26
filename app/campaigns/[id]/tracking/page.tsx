@@ -103,6 +103,8 @@ export default async function TrackingPage({
             <tr>
               <th>Email</th>
               <th>Name</th>
+              <th>Opens</th>
+              <th>Clicks</th>
               {touches.map((t) => (
                 <th key={t.seq}>{t.label}</th>
               ))}
@@ -113,6 +115,8 @@ export default async function TrackingPage({
               <tr key={r.contact_id}>
                 <td>{r.email}</td>
                 <td>{r.name ?? <span className="muted">—</span>}</td>
+                <td style={{ textAlign: "center" }}>{r.opens > 0 ? r.opens : "—"}</td>
+                <td style={{ textAlign: "center" }}>{r.clicks > 0 ? r.clicks : "—"}</td>
                 {touches.map((t) => (
                   <td key={t.seq}>
                     <Cell

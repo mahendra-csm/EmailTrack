@@ -215,6 +215,8 @@ export interface TrackingRow {
   email: string;
   name: string | null;
   touches: Record<number, TouchCell>; // keyed by touch seq (1..4)
+  opens: number;
+  clicks: number;
 }
 
 export async function trackingMatrix(campaignId: number): Promise<TrackingRow[]> {
@@ -240,11 +242,30 @@ export async function trackingMatrix(campaignId: number): Promise<TrackingRow[]>
   }>(res)) {
     let row = byContact.get(r.contact_id);
     if (!row) {
-      row = { contact_id: r.contact_id, email: r.email, name: r.name, touches: {} };
+      row = { contact_id: r.contact_id, email: r.email, name: r.name, touches: {}, opens: 0, clicks: 0 };
       byContact.set(r.contact_id, row);
     }
     row.touches[r.stage] = { status: r.status, sent_at: r.sent_at };
   }
+
+  const events = await c.execute({
+    sql: `SELECT contact_id,
+                 SUM(CASE WHEN type = 'open' THEN 1 ELSE 0 END) AS opens,
+                 SUM(CASE WHEN type = 'click' THEN 1 ELSE 0 END) AS clicks
+          FROM email_events
+          WHERE campaign_id = ?
+          GROUP BY contact_id`,
+    args: [campaignId],
+  });
+
+  for (const e of rows<{ contact_id: number; opens: number; clicks: number }>(events)) {
+    const row = byContact.get(e.contact_id);
+    if (row) {
+      row.opens = e.opens ?? 0;
+      row.clicks = e.clicks ?? 0;
+    }
+  }
+
   return [...byContact.values()];
 }
 
@@ -301,6 +322,7 @@ export async function databaseStats(): Promise<DatabaseStats> {
 
 export interface DeliverabilityTotals {
   sent: number;
+  delivered: number;
   failed: number;
   canceled: number;
   opens: number;
@@ -339,8 +361,11 @@ export async function deliverabilityTotals(): Promise<DeliverabilityTotals> {
       FROM email_events`)
   );
   const supp = one<{ n: number }>(await c.execute("SELECT COUNT(*) AS n FROM suppressions"));
+  const sent = s?.sent ?? 0;
+  const bounces = e?.bounces ?? 0;
   return {
-    sent: s?.sent ?? 0,
+    sent,
+    delivered: Math.max(sent - bounces, 0),
     failed: s?.failed ?? 0,
     canceled: s?.canceled ?? 0,
     opens: e?.opens ?? 0,
@@ -348,13 +373,14 @@ export async function deliverabilityTotals(): Promise<DeliverabilityTotals> {
     clicksUnique: e?.clicks_unique ?? 0,
     replies: e?.replies ?? 0,
     unsubs: e?.unsubs ?? 0,
-    bounces: e?.bounces ?? 0,
+    bounces,
     suppressed: supp?.n ?? 0,
   };
 }
 
 export interface CampaignDelivStats {
   sent: number;
+  delivered: number;
   failed: number;
   opens: number;
   opensUnique: number;
@@ -394,15 +420,18 @@ export async function campaignDeliverability(campaignId: number): Promise<Campai
       args: [campaignId],
     })
   );
+  const sent = s?.sent ?? 0;
+  const bounces = e?.bounces ?? 0;
   return {
-    sent: s?.sent ?? 0,
+    sent,
+    delivered: Math.max(sent - bounces, 0),
     failed: s?.failed ?? 0,
     opens: e?.opens ?? 0,
     opensUnique: e?.opens_unique ?? 0,
     clicksUnique: e?.clicks_unique ?? 0,
     replies: e?.replies ?? 0,
     unsubs: e?.unsubs ?? 0,
-    bounces: e?.bounces ?? 0,
+    bounces,
   };
 }
 
@@ -412,6 +441,7 @@ export interface CampaignDeliverability {
   status: string;
   country: string | null;
   sent: number;
+  delivered: number;
   failed: number;
   opens_unique: number;
   clicks_unique: number;
@@ -425,6 +455,7 @@ export async function deliverabilityByCampaign(): Promise<CampaignDeliverability
     `SELECT c.id, c.name, c.status, c.country,
        (SELECT COUNT(*) FROM campaign_stages s WHERE s.campaign_id=c.id AND s.status='sent') AS sent,
        (SELECT COUNT(*) FROM campaign_stages s WHERE s.campaign_id=c.id AND s.status='failed') AS failed,
+       (SELECT COUNT(*) FROM email_events e WHERE e.campaign_id=c.id AND e.type='bounce') AS bounces,
        (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='open') AS opens_unique,
        (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='click') AS clicks_unique,
        (SELECT COUNT(*) FROM email_events e WHERE e.campaign_id=c.id AND e.type='reply') AS replies,
@@ -432,7 +463,10 @@ export async function deliverabilityByCampaign(): Promise<CampaignDeliverability
      FROM campaigns c
      ORDER BY c.created_at DESC, c.id DESC`
   );
-  return rows<CampaignDeliverability>(res);
+  return rows<CampaignDeliverability>(res).map((row) => ({
+    ...row,
+    delivered: Math.max(row.sent - row.bounces, 0),
+  }));
 }
 
 // ---- Recipients (valid / bounced / unsubscribed / replied) ----------------

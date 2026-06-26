@@ -14,11 +14,13 @@ export default async function DeliverabilityPage() {
   const campaigns = await deliverabilityByCampaign();
   const senders = await senderHealth();
 
+   
   const cards = [
     { label: "Emails sent", value: totals.sent.toLocaleString(), sub: "" },
-    { label: "Open rate", value: pct(totals.opensUnique, totals.sent), sub: `${totals.opensUnique.toLocaleString()} unique · ${totals.opens.toLocaleString()} total` },
-    { label: "Click rate", value: pct(totals.clicksUnique, totals.sent), sub: `${totals.clicksUnique.toLocaleString()} clicked` },
-    { label: "Reply rate", value: pct(totals.replies, totals.sent), sub: `${totals.replies.toLocaleString()} replied` },
+    { label: "Delivered", value: totals.delivered.toLocaleString(), sub: "" },
+    { label: "Open rate", value: pct(totals.opensUnique, totals.delivered), sub: `${totals.opensUnique.toLocaleString()} unique · ${totals.opens.toLocaleString()} total` },
+    { label: "Click rate", value: pct(totals.clicksUnique, totals.delivered), sub: `${totals.clicksUnique.toLocaleString()} clicked` },
+    { label: "Reply rate", value: pct(totals.replies, totals.delivered), sub: `${totals.replies.toLocaleString()} replied` },
     { label: "Bounce rate", value: pct(totals.bounces, totals.sent), sub: `${totals.bounces.toLocaleString()} bounced & removed` },
     { label: "Unsub rate", value: pct(totals.unsubs, totals.sent), sub: `${totals.unsubs.toLocaleString()} opted out` },
     { label: "Failed", value: totals.failed.toLocaleString(), sub: `${totals.suppressed.toLocaleString()} suppressed total` },
@@ -48,6 +50,11 @@ export default async function DeliverabilityPage() {
         ))}
       </div>
 
+      <p className="muted" style={{ fontSize: 12, margin: "0 2px 14px" }}>
+        Open / click / reply rates are measured over delivered emails (sent minus bounces).
+        Bounce and unsub rates still use the total sent count as the base.
+      </p>
+
       <p className="muted" style={{ fontSize: 12, margin: "4px 2px 22px" }}>
         Open tracking needs <code>APP_URL</code> set to your public URL, and works once
         recipients view images. Reply detection runs from the{" "}
@@ -62,9 +69,11 @@ export default async function DeliverabilityPage() {
               <th>Campaign</th>
               <th>Country</th>
               <th>Sent</th>
+              <th>Delivered</th>
               <th>Opens</th>
               <th>Open %</th>
               <th>Clicks</th>
+              <th>Click %</th>
               <th>Replies</th>
               <th>Unsubs</th>
               <th>Failed</th>
@@ -76,9 +85,11 @@ export default async function DeliverabilityPage() {
                 <td style={{ fontWeight: 600 }}>{c.name}</td>
                 <td>{c.country ?? <span className="muted">—</span>}</td>
                 <td>{c.sent.toLocaleString()}</td>
+                <td>{c.delivered.toLocaleString()}</td>
                 <td>{c.opens_unique.toLocaleString()}</td>
-                <td>{pct(c.opens_unique, c.sent)}</td>
+                <td>{pct(c.opens_unique, c.delivered)}</td>
                 <td>{c.clicks_unique.toLocaleString()}</td>
+                <td>{pct(c.clicks_unique, c.delivered)}</td>
                 <td>{c.replies.toLocaleString()}</td>
                 <td>{c.unsubs.toLocaleString()}</td>
                 <td>{c.failed.toLocaleString()}</td>

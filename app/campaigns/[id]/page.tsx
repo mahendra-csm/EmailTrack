@@ -300,16 +300,24 @@ export default function CampaignDetailPage() {
           <div className="value">{data.deliverability.sent.toLocaleString()}</div>
         </div>
         <div className="stat">
+          <div className="label">Delivered</div>
+          <div className="value">{data.deliverability.delivered.toLocaleString()}</div>
+        </div>
+        <div className="stat">
           <div className="label">Open rate</div>
-          <div className="value">{rate(data.deliverability.opensUnique, data.deliverability.sent)}</div>
+          <div className="value">{rate(data.deliverability.opensUnique, data.deliverability.delivered)}</div>
           <div className="muted" style={{ fontSize: 12 }}>
             {data.deliverability.opensUnique.toLocaleString()} opened
           </div>
         </div>
         <div className="stat">
           <div className="label">Click rate</div>
-          <div className="value">{rate(data.deliverability.clicksUnique, data.deliverability.sent)}</div>
+          <div className="value">{rate(data.deliverability.clicksUnique, data.deliverability.delivered)}</div>
         </div>
+      </div>
+      <p className="muted" style={{ fontSize: 12, margin: "0 2px 14px" }}>
+        Rates above are calculated over delivered emails (sent minus bounces).
+      </p>
         <div className="stat">
           <div className="label">Replies</div>
           <div className="value">{data.deliverability.replies.toLocaleString()}</div>
