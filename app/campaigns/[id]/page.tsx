@@ -34,6 +34,7 @@ interface StageBlock {
 }
 interface Deliverability {
   sent: number;
+  delivered: number;
   failed: number;
   opens: number;
   opensUnique: number;
