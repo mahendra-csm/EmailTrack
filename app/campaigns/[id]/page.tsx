@@ -314,10 +314,6 @@ export default function CampaignDetailPage() {
           <div className="label">Click rate</div>
           <div className="value">{rate(data.deliverability.clicksUnique, data.deliverability.delivered)}</div>
         </div>
-      </div>
-      <p className="muted" style={{ fontSize: 12, margin: "0 2px 14px" }}>
-        Rates above are calculated over delivered emails (sent minus bounces).
-      </p>
         <div className="stat">
           <div className="label">Replies</div>
           <div className="value">{data.deliverability.replies.toLocaleString()}</div>
@@ -331,6 +327,9 @@ export default function CampaignDetailPage() {
           <div className="value">{data.deliverability.unsubs.toLocaleString()}</div>
         </div>
       </div>
+      <p className="muted" style={{ fontSize: 12, margin: "0 2px 14px" }}>
+        Rates above are calculated over delivered emails (sent minus bounces).
+      </p>
 
       <div className="card" style={{ marginTop: 18 }}>
         <div className="send-bar" style={{ marginTop: 0 }}>
