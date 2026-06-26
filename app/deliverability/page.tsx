@@ -19,7 +19,7 @@ export default async function DeliverabilityPage() {
     { label: "Emails sent", value: totals.sent.toLocaleString(), sub: "" },
     { label: "Delivered", value: totals.delivered.toLocaleString(), sub: "" },
     { label: "Open rate", value: pct(totals.opensUnique, totals.delivered), sub: `${totals.opensUnique.toLocaleString()} unique · ${totals.opens.toLocaleString()} total` },
-    { label: "Click rate", value: pct(totals.clicksUnique, totals.delivered), sub: `${totals.clicksUnique.toLocaleString()} clicked` },
+    { label: "Click rate", value: pct(totals.clicksUnique, totals.delivered), sub: `${totals.clicksUnique.toLocaleString()} unique · ${totals.clicks.toLocaleString()} total` },
     { label: "Reply rate", value: pct(totals.replies, totals.delivered), sub: `${totals.replies.toLocaleString()} replied` },
     { label: "Bounce rate", value: pct(totals.bounces, totals.sent), sub: `${totals.bounces.toLocaleString()} bounced & removed` },
     { label: "Unsub rate", value: pct(totals.unsubs, totals.sent), sub: `${totals.unsubs.toLocaleString()} opted out` },
@@ -86,9 +86,19 @@ export default async function DeliverabilityPage() {
                 <td>{c.country ?? <span className="muted">—</span>}</td>
                 <td>{c.sent.toLocaleString()}</td>
                 <td>{c.delivered.toLocaleString()}</td>
-                <td>{c.opens_unique.toLocaleString()}</td>
+                <td>
+                  {c.opens_unique.toLocaleString()}
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    {c.opens.toLocaleString()} total
+                  </div>
+                </td>
                 <td>{pct(c.opens_unique, c.delivered)}</td>
-                <td>{c.clicks_unique.toLocaleString()}</td>
+                <td>
+                  {c.clicks_unique.toLocaleString()}
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    {c.clicks.toLocaleString()} total
+                  </div>
+                </td>
                 <td>{pct(c.clicks_unique, c.delivered)}</td>
                 <td>{c.replies.toLocaleString()}</td>
                 <td>{c.unsubs.toLocaleString()}</td>

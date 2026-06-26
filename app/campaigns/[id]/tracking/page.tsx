@@ -9,10 +9,14 @@ function Cell({
   status,
   sentAt,
   due,
+  opens,
+  clicks,
 }: {
   status: "pending" | "sending" | "sent" | "failed" | "canceled" | undefined;
   sentAt: string | null | undefined;
   due: string | null;
+  opens: number;
+  clicks: number;
 }) {
   if (status === "sent") {
     return (
@@ -20,6 +24,22 @@ function Cell({
         <span className="badge sent">sent</span>
         <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>
           {sentAt?.slice(0, 10) ?? ""}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: 12,
+            marginTop: 6,
+            fontSize: 12,
+          }}
+        >
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <span>👁</span> {opens}
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <span>🔗</span> {clicks}
+          </span>
         </div>
       </div>
     );
@@ -115,14 +135,32 @@ export default async function TrackingPage({
               <tr key={r.contact_id}>
                 <td>{r.email}</td>
                 <td>{r.name ?? <span className="muted">—</span>}</td>
-                <td style={{ textAlign: "center" }}>{r.opens > 0 ? r.opens : "—"}</td>
-                <td style={{ textAlign: "center" }}>{r.clicks > 0 ? r.clicks : "—"}</td>
+                <td style={{ textAlign: "center" }}>
+                  {r.opens > 0 ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <span>👁</span> {r.opens}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td style={{ textAlign: "center" }}>
+                  {r.clicks > 0 ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <span>🔗</span> {r.clicks}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 {touches.map((t) => (
                   <td key={t.seq}>
                     <Cell
                       status={r.touches[t.seq]?.status}
                       sentAt={r.touches[t.seq]?.sent_at}
                       due={due[t.seq] ?? null}
+                      opens={r.stageEvents[t.seq]?.opens ?? 0}
+                      clicks={r.stageEvents[t.seq]?.clicks ?? 0}
                     />
                   </td>
                 ))}
@@ -130,7 +168,7 @@ export default async function TrackingPage({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={2 + touches.length} className="muted" style={{ padding: 24 }}>
+                <td colSpan={4 + touches.length} className="muted" style={{ padding: 24 }}>
                   No contacts in this campaign.
                 </td>
               </tr>
