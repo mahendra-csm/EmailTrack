@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import type { SmtpAccountUsage } from "../../components/SmtpUsage";
 
@@ -74,6 +74,7 @@ interface BatchResult {
 
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [data, setData] = useState<Detail | null>(null);
   const [accounts, setAccounts] = useState<SmtpAccountUsage[]>([]);
   const [activeStage, setActiveStage] = useState<number>(1);
@@ -202,6 +203,20 @@ export default function CampaignDetailPage() {
     await loadDetail();
   }
 
+  async function deleteCampaign() {
+    if (!confirm("Delete this campaign and all its contacts, stages, logs, and tracking data?")) {
+      return;
+    }
+
+    const res = await fetch(`/api/campaigns/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      setError((await res.json()).error ?? "Failed to delete campaign.");
+      return;
+    }
+
+    router.push("/");
+  }
+
   if (error) return <div className="notice error">{error}</div>;
   if (!data) return <p className="muted">Loading…</p>;
 
@@ -228,6 +243,9 @@ export default function CampaignDetailPage() {
             title={data.campaign.auto_send === 1 ? "Stop auto-sending this campaign" : "Resume auto-sending"}
           >
             {data.campaign.auto_send === 1 ? "⏸ Pause sending" : "▶ Resume sending"}
+          </button>
+          <button className="btn danger" onClick={deleteCampaign} disabled={sending}>
+            Delete campaign
           </button>
           <Link href={`/campaigns/${id}/tracking`} className="btn secondary">
             Tracking

@@ -36,6 +36,17 @@ export async function getCampaign(id: number): Promise<Campaign | undefined> {
   return one<Campaign>(res);
 }
 
+export async function deleteCampaign(id: number): Promise<void> {
+  const c = await db();
+  await c.execute({ sql: "DELETE FROM campaign_stages WHERE campaign_id = ?", args: [id] });
+  await c.execute({ sql: "DELETE FROM email_logs WHERE campaign_id = ?", args: [id] });
+  await c.execute({ sql: "DELETE FROM email_events WHERE campaign_id = ?", args: [id] });
+  await c.execute({ sql: "DELETE FROM email_templates WHERE campaign_id = ?", args: [id] });
+  await c.execute({ sql: "DELETE FROM suppressions WHERE campaign_id = ?", args: [id] });
+  await c.execute({ sql: "DELETE FROM contacts WHERE campaign_id = ?", args: [id] });
+  await c.execute({ sql: "DELETE FROM campaigns WHERE id = ?", args: [id] });
+}
+
 // ---- Stage summaries (summary cards) --------------------------------------
 
 export async function stageSummaries(campaign: Campaign): Promise<StageSummary[]> {

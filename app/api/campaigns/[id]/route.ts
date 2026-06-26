@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCampaign, stageSummaries, stageRows, campaignDeliverability } from "@/lib/queries";
+import { getCampaign, stageSummaries, stageRows, campaignDeliverability, deleteCampaign } from "@/lib/queries";
 import { scheduleFor } from "@/lib/schedule";
 import { touchesFor } from "@/lib/types";
 import { db } from "@/lib/db";
@@ -29,6 +29,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     args: [value, value, campaignId],
   });
   return NextResponse.json({ ok: true, auto_send: value });
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const campaignId = Number(id);
+  const campaign = await getCampaign(campaignId);
+  if (!campaign) return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
+
+  await deleteCampaign(campaignId);
+  return NextResponse.json({ ok: true });
 }
 
 export async function GET(
