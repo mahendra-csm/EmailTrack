@@ -443,6 +443,7 @@ export interface CampaignDeliverability {
   sent: number;
   delivered: number;
   failed: number;
+  bounces: number;
   opens_unique: number;
   clicks_unique: number;
   replies: number;
