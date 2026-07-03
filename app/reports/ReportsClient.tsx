@@ -414,20 +414,20 @@ function ReportsClientInner({ campaigns }: { campaigns: CampaignWithCounts[] }) 
 
           {/* Report Table */}
           <div className="card" style={{ padding: 0, overflowX: "auto" }}>
-            <table>
+            <table style={{ minWidth: "1350px", tableLayout: "auto" }}>
               <thead>
                 <tr>
-                  <th>Recipient</th>
-                  <th>Delivery</th>
-                  <th>Opens</th>
-                  <th>Clicks</th>
-                  <th>Clicked Links</th>
+                  <th style={{ width: "200px" }}>Recipient</th>
+                  <th style={{ width: "120px" }}>Delivery</th>
+                  <th style={{ width: "80px" }}>Opens</th>
+                  <th style={{ width: "80px" }}>Clicks</th>
+                  <th style={{ width: "240px" }}>Clicked Links</th>
                   {touches.map((t) => (
                     <th key={t.seq} style={{ whiteSpace: "nowrap" }}>
                       Stage {t.seq}: {t.label.split(" · ")[1]}
                     </th>
                   ))}
-                  <th>Engagement</th>
+                  <th style={{ width: "140px" }}>Engagement</th>
                 </tr>
               </thead>
               <tbody>
@@ -447,12 +447,35 @@ function ReportsClientInner({ campaigns }: { campaigns: CampaignWithCounts[] }) 
 
                   return (
                     <tr key={c.contact_id}>
-                      <td>
-                        <div style={{ fontWeight: 600 }}>{c.email}</div>
-                        {c.name && <div className="muted" style={{ fontSize: 11 }}>{c.name}</div>}
+                      <td style={{ maxWidth: "200px" }}>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                          title={c.email}
+                        >
+                          {c.email}
+                        </div>
+                        {c.name && (
+                          <div
+                            className="muted"
+                            style={{
+                              fontSize: 11,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                            title={c.name}
+                          >
+                            {c.name}
+                          </div>
+                        )}
                       </td>
                       <td>
-                        <div style={{ fontSize: 12 }}>
+                        <div style={{ fontSize: 12, whiteSpace: "nowrap" }}>
                           {c.sent_count} sent
                           {c.failed_count > 0 && (
                             <span style={{ color: "var(--red)", marginLeft: 4 }}>
@@ -460,7 +483,7 @@ function ReportsClientInner({ campaigns }: { campaigns: CampaignWithCounts[] }) 
                             </span>
                           )}
                         </div>
-                        <div className="muted" style={{ fontSize: 11 }}>
+                        <div className="muted" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
                           Delivered: {c.delivered_count}
                         </div>
                       </td>
@@ -470,12 +493,27 @@ function ReportsClientInner({ campaigns }: { campaigns: CampaignWithCounts[] }) 
                       <td style={{ fontWeight: c.clicks_count > 0 ? 600 : "normal" }}>
                         {c.clicks_count > 0 ? `🔗 ${c.clicks_count}` : "—"}
                       </td>
-                      <td style={{ maxWidth: 220 }}>
+                      <td style={{ maxWidth: "240px" }}>
                         {c.clicked_links.length > 0 ? (
-                          <div style={{ fontSize: 11, wordBreak: "break-all" }}>
+                          <div style={{ fontSize: 11 }}>
                             {c.clicked_links.map((link, idx) => (
-                              <div key={idx} style={{ marginBottom: 2 }}>
-                                <a href={link} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline" }}>
+                              <div
+                                key={idx}
+                                style={{
+                                  maxWidth: "220px",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  marginBottom: 2,
+                                }}
+                              >
+                                <a
+                                  href={link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title={link}
+                                  style={{ color: "#2563eb", textDecoration: "underline" }}
+                                >
                                   {link}
                                 </a>
                               </div>
