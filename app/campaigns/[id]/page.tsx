@@ -250,6 +250,9 @@ export default function CampaignDetailPage() {
           <Link href={`/campaigns/${id}/tracking`} className="btn secondary">
             Tracking
           </Link>
+          <Link href={`/reports?campaignId=${id}`} className="btn secondary">
+            📋 Report
+          </Link>
           <Link href={`/campaigns/${id}/logs`} className="btn secondary">
             Logs
           </Link>

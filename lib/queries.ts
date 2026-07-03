@@ -584,3 +584,166 @@ export async function senderHealth(): Promise<SenderHealthRow[]> {
   );
   return rows<SenderHealthRow>(res);
 }
+
+export interface ContactReportRow {
+  contact_id: number;
+  email: string;
+  name: string | null;
+  coupon: string | null;
+  unsubscribed_at: string | null;
+  replied_at: string | null;
+  sent_count: number;
+  failed_count: number;
+  delivered_count: number;
+  opens_count: number;
+  clicks_count: number;
+  bounced: boolean;
+  unsubscribed: boolean;
+  replied: boolean;
+  clicked_links: string[];
+  clicked_gt_2: boolean;
+  clicked_gt_3: boolean;
+  clicked_gt_5: boolean;
+  touches: Record<number, { status: string; sent_at: string | null; last_error: string | null }>;
+}
+
+export interface CampaignReport {
+  campaign: Campaign;
+  contacts: ContactReportRow[];
+}
+
+export async function getCampaignReport(campaignId: number): Promise<CampaignReport | undefined> {
+  const campaign = await getCampaign(campaignId);
+  if (!campaign) return undefined;
+
+  const c = await db();
+  
+  // 1. Fetch all contacts in campaign
+  const ctRes = await c.execute({
+    sql: "SELECT id, email, name, unsubscribed_at, replied_at, coupon FROM contacts WHERE campaign_id = ?",
+    args: [campaignId],
+  });
+  const contactsList = rows<{
+    id: number;
+    email: string;
+    name: string | null;
+    coupon: string | null;
+    unsubscribed_at: string | null;
+    replied_at: string | null;
+  }>(ctRes);
+
+  // 2. Fetch all stages in campaign
+  const stageRes = await c.execute({
+    sql: "SELECT contact_id, stage, status, sent_at, last_error FROM campaign_stages WHERE campaign_id = ?",
+    args: [campaignId],
+  });
+  const stagesList = rows<{
+    contact_id: number;
+    stage: number;
+    status: "pending" | "sending" | "sent" | "failed" | "canceled";
+    sent_at: string | null;
+    last_error: string | null;
+  }>(stageRes);
+
+  // 3. Fetch all events in campaign
+  const eventRes = await c.execute({
+    sql: "SELECT contact_id, type, url FROM email_events WHERE campaign_id = ?",
+    args: [campaignId],
+  });
+  const eventsList = rows<{
+    contact_id: number;
+    type: string;
+    url: string | null;
+  }>(eventRes);
+
+  // Group stages and events by contact_id for O(N) mapping
+  const stagesByContact = new Map<number, typeof stagesList>();
+  for (const s of stagesList) {
+    if (!stagesByContact.has(s.contact_id)) {
+      stagesByContact.set(s.contact_id, []);
+    }
+    stagesByContact.get(s.contact_id)!.push(s);
+  }
+
+  const eventsByContact = new Map<number, typeof eventsList>();
+  for (const e of eventsList) {
+    if (e.contact_id === null || e.contact_id === undefined) continue;
+    if (!eventsByContact.has(e.contact_id)) {
+      eventsByContact.set(e.contact_id, []);
+    }
+    eventsByContact.get(e.contact_id)!.push(e);
+  }
+
+  const contactReportRows: ContactReportRow[] = [];
+
+  for (const ct of contactsList) {
+    const cStages = stagesByContact.get(ct.id) ?? [];
+    const cEvents = eventsByContact.get(ct.id) ?? [];
+
+    let sent_count = 0;
+    let failed_count = 0;
+    let bounce_count = 0;
+    let opens_count = 0;
+    let clicks_count = 0;
+    const clicked_links_set = new Set<string>();
+
+    const touches: Record<number, { status: string; sent_at: string | null; last_error: string | null }> = {};
+    for (const s of cStages) {
+      touches[s.stage] = {
+        status: s.status,
+        sent_at: s.sent_at,
+        last_error: s.last_error,
+      };
+      if (s.status === "sent") {
+        sent_count++;
+      } else if (s.status === "failed") {
+        failed_count++;
+      }
+    }
+
+    for (const e of cEvents) {
+      if (e.type === "open") {
+        opens_count++;
+      } else if (e.type === "click") {
+        clicks_count++;
+        if (e.url) clicked_links_set.add(e.url);
+      } else if (e.type === "bounce") {
+        bounce_count++;
+      }
+    }
+
+    const bounced = bounce_count > 0;
+    const unsubscribed = ct.unsubscribed_at !== null;
+    const replied = ct.replied_at !== null;
+    
+    // Delivered is sent minus bounced
+    const delivered_count = Math.max(sent_count - bounce_count, 0);
+
+    contactReportRows.push({
+      contact_id: ct.id,
+      email: ct.email,
+      name: ct.name,
+      coupon: ct.coupon,
+      unsubscribed_at: ct.unsubscribed_at,
+      replied_at: ct.replied_at,
+      sent_count,
+      failed_count,
+      delivered_count,
+      opens_count,
+      clicks_count,
+      bounced,
+      unsubscribed,
+      replied,
+      clicked_links: Array.from(clicked_links_set),
+      clicked_gt_2: clicks_count > 2,
+      clicked_gt_3: clicks_count > 3,
+      clicked_gt_5: clicks_count > 5,
+      touches,
+    });
+  }
+
+  return {
+    campaign,
+    contacts: contactReportRows,
+  };
+}
