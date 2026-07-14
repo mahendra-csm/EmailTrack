@@ -14,12 +14,21 @@ export async function recordEvent(e: {
   stage?: number | null;
   url?: string | null;
   meta?: string | null;
+  bot?: boolean; // true = automated fetcher (scanner/prefetch) — excluded from stats
 }): Promise<void> {
   const c = await db();
   await c.execute({
-    sql: `INSERT INTO email_events (type, campaign_id, contact_id, stage, url, meta)
-          VALUES (?, ?, ?, ?, ?, ?)`,
-    args: [e.type, e.campaignId ?? null, e.contactId ?? null, e.stage ?? null, e.url ?? null, e.meta ?? null],
+    sql: `INSERT INTO email_events (type, campaign_id, contact_id, stage, url, meta, bot)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      e.type,
+      e.campaignId ?? null,
+      e.contactId ?? null,
+      e.stage ?? null,
+      e.url ?? null,
+      e.meta ?? null,
+      e.bot ? 1 : 0,
+    ],
   });
 }
 

@@ -104,6 +104,18 @@ export default function CampaignDetailPage() {
     loadAccounts();
   }, [loadDetail, loadAccounts]);
 
+  // Live updates: refresh deliverability/opens/clicks every 10s while the tab is
+  // visible. Paused during an active manual send (that loop refreshes already).
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!sending && document.visibilityState === "visible") {
+        loadDetail();
+        loadAccounts();
+      }
+    }, 10000);
+    return () => clearInterval(id);
+  }, [sending, loadDetail, loadAccounts]);
+
   useEffect(() => {
     if (selectedSmtp === null && accounts.length > 0) {
       const firstFree = accounts.find((a) => a.remaining > 0) ?? accounts[0];
@@ -231,7 +243,7 @@ export default function CampaignDetailPage() {
           </Link>
           <h1 style={{ marginTop: 6 }}>{data.campaign.name}</h1>
           <p className="muted" style={{ margin: 0 }}>
-            Batch {data.campaign.batch_type}
+            {data.campaign.batch_type === 3 ? "Webinar blast" : `Batch ${data.campaign.batch_type}`}
             {data.campaign.country ? ` · ${data.campaign.country}` : ""} · starts{" "}
             {data.campaign.start_date ?? "—"} · created {data.campaign.created_at}
           </p>

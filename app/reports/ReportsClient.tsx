@@ -35,8 +35,10 @@ function ReportsClientInner({ campaigns }: { campaigns: CampaignWithCounts[] }) 
     }
   }, [campaignIdParam, campaigns]);
 
-  const loadReport = useCallback(async (id: number) => {
-    setLoading(true);
+  // `silent` = a background poll: don't flip the loading spinner or clear the
+  // visible report on a transient error, so live refreshes never flicker.
+  const loadReport = useCallback(async (id: number, silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const res = await fetch(`/api/campaigns/${id}/report`, { cache: "no-store" });
@@ -46,10 +48,12 @@ function ReportsClientInner({ campaigns }: { campaigns: CampaignWithCounts[] }) 
       const data: CampaignReport = await res.json();
       setReport(data);
     } catch (err: any) {
-      setError(err.message ?? "Something went wrong.");
-      setReport(null);
+      if (!silent) {
+        setError(err.message ?? "Something went wrong.");
+        setReport(null);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -57,6 +61,16 @@ function ReportsClientInner({ campaigns }: { campaigns: CampaignWithCounts[] }) 
     if (selectedId !== null) {
       loadReport(selectedId);
     }
+  }, [selectedId, loadReport]);
+
+  // Live updates: re-pull the selected campaign's report every 15s (tab visible)
+  // so open/click numbers stay current without a manual reload.
+  useEffect(() => {
+    if (selectedId === null) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") loadReport(selectedId, true);
+    }, 15000);
+    return () => clearInterval(id);
   }, [selectedId, loadReport]);
 
   const filteredContacts = useMemo(() => {
@@ -144,8 +158,9 @@ function ReportsClientInner({ campaigns }: { campaigns: CampaignWithCounts[] }) 
 
   const touches = useMemo(() => {
     if (!report) return [];
-    // Batch 1: 4 touches, Batch 2: 3 touches
+    // Batch 1: 4 touches, Batch 2: 3 touches, Webinar (3): single blast.
     const batchType = report.campaign.batch_type;
+    if (batchType === 3) return [{ seq: 1, label: "Webinar" }];
     return batchType === 1
       ? [
           { seq: 1, label: "Invitation" },
@@ -222,9 +237,21 @@ function ReportsClientInner({ campaigns }: { campaigns: CampaignWithCounts[] }) 
         <div>
           <h1>Campaign Reports</h1>
           <p className="muted" style={{ margin: 0 }}>
-            Analyze contact engagement, identify hot leads, and export lists for retargeting.
+            Analyze contact engagement, identify hot leads, and export lists for
+            retargeting. Numbers update live and count real humans only —
+            automated scanner/prefetch opens &amp; clicks are filtered out.
           </p>
         </div>
+        <span
+          className="badge active"
+          title="Report refreshes automatically every 15 seconds"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, alignSelf: "flex-start" }}
+        >
+          <span
+            style={{ width: 8, height: 8, borderRadius: "50%", background: "#16a34a", display: "inline-block" }}
+          />
+          Live
+        </span>
       </div>
 
       {/* Campaign Selector */}
@@ -424,7 +451,7 @@ function ReportsClientInner({ campaigns }: { campaigns: CampaignWithCounts[] }) 
                   <th style={{ width: "240px" }}>Clicked Links</th>
                   {touches.map((t) => (
                     <th key={t.seq} style={{ whiteSpace: "nowrap" }}>
-                      Stage {t.seq}: {t.label.split(" · ")[1]}
+                      Stage {t.seq}: {t.label}
                     </th>
                   ))}
                   <th style={{ width: "140px" }}>Engagement</th>

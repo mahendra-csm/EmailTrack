@@ -245,7 +245,9 @@ export async function sendStageRow(
 
   const vars = { name: contact.name, email: contact.email, coupon: contact.coupon };
   const subject = renderTemplate(tpl.subject, vars);
-  const ids = { c: row.campaign_id, k: row.contact_id, s: row.stage };
+  // Stamp the send time into the tracking token so the open/click endpoints can
+  // tell an instant scanner prefetch from a real human open (see lib/botFilter).
+  const ids = { c: row.campaign_id, k: row.contact_id, s: row.stage, t: Date.now() };
   const unsubUrl = unsubscribeUrl(unsubToken({ e: contact.email, c: row.campaign_id }));
   const rendered = renderTemplate(tpl.body, vars);
   const html = instrumentHtml(rendered, ids, unsubUrl);

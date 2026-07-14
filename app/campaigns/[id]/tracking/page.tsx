@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getCampaign, trackingMatrix, stageSummaries } from "@/lib/queries";
 import { touchesFor } from "@/lib/types";
 import { scheduleFor } from "@/lib/schedule";
+import AutoRefresh from "@/app/components/AutoRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -90,9 +91,11 @@ export default async function TrackingPage({
             Tracking{campaign ? ` — ${campaign.name}` : ""}
           </h1>
           <p className="muted" style={{ margin: 0 }}>
-            Every contact across the scheduled emails.
+            Every contact across the scheduled emails. Opens &amp; clicks are
+            counted live and exclude automated scanner/prefetch hits.
           </p>
         </div>
+        <AutoRefresh seconds={10} />
       </div>
 
       <div className="grid cards-row" style={{ marginBottom: 18 }}>

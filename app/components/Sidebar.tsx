@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type IconName = "campaigns" | "plus" | "database" | "mail" | "chart" | "people" | "award" | "report";
+type IconName = "campaigns" | "plus" | "database" | "mail" | "chart" | "people" | "award" | "report" | "webinar";
 
 function Icon({ name }: { name: IconName }) {
   const common = {
@@ -80,12 +80,20 @@ function Icon({ name }: { name: IconName }) {
           <polyline points="10 9 9 9 8 9" />
         </svg>
       );
+    case "webinar":
+      return (
+        <svg {...common}>
+          <path d="M15 10l4.55-2.27A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.89L15 14" />
+          <rect x="3" y="6" width="12" height="12" rx="2" />
+        </svg>
+      );
   }
 }
 
 const NAV: { href: string; label: string; icon: IconName; exact: boolean }[] = [
   { href: "/", label: "Campaigns", icon: "campaigns", exact: true },
   { href: "/upload", label: "New campaign", icon: "plus", exact: false },
+  { href: "/webinar", label: "Webinar", icon: "webinar", exact: false },
   { href: "/committee", label: "Scientific Committee", icon: "award", exact: false },
   { href: "/recipients", label: "Recipients", icon: "people", exact: false },
   { href: "/deliverability", label: "Deliverability", icon: "chart", exact: false },

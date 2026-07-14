@@ -20,11 +20,19 @@ export function unsubscribeUrl(token: string): string {
   return base ? `${base}/api/unsubscribe?t=${token}` : `mailto:?subject=Unsubscribe`;
 }
 
+// Rewrite every real http(s) link so clicks are tracked. Handles both double-
+// and single-quoted hrefs (`href="..."` and `href='...'`) so no link in a
+// template slips through untracked. mailto:/tel:/anchor links are left alone
+// (only http(s) is matched), and the unsubscribe + open-pixel URLs are added
+// AFTER this pass so they're never wrapped as engagement clicks.
 function rewriteLinks(html: string, ids: SendToken, base: string): string {
-  return html.replace(/href="(https?:\/\/[^"]+)"/gi, (_m, url: string) => {
-    const tok = sign({ ...ids, u: url });
-    return `href="${base}/api/track/click?t=${tok}"`;
-  });
+  return html.replace(
+    /href=(["'])(https?:\/\/[^"']+)\1/gi,
+    (_m, quote: string, url: string) => {
+      const tok = sign({ ...ids, u: url });
+      return `href=${quote}${base}/api/track/click?t=${tok}${quote}`;
+    }
+  );
 }
 
 function openPixel(ids: SendToken, base: string): string {

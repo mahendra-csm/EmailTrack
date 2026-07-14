@@ -44,6 +44,7 @@ export interface SendToken {
   c: number; // campaign_id
   k: number; // contact_id
   s: number; // stage
+  t?: number; // send time (epoch ms) — lets open/click detect instant bot prefetch
 }
 export interface UnsubToken {
   e: string; // email

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verify, SendToken } from "@/lib/token";
 import { recordEvent } from "@/lib/events";
+import { isBotHit } from "@/lib/botFilter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,12 +16,15 @@ export async function GET(req: NextRequest) {
   const p = verify<SendToken>(req.nextUrl.searchParams.get("t"));
   if (p) {
     try {
+      const ua = req.headers.get("user-agent");
+      const bot = isBotHit(ua, typeof p.t === "number" ? Date.now() - p.t : null);
       await recordEvent({
         type: "open",
         campaignId: p.c,
         contactId: p.k,
         stage: p.s,
-        meta: req.headers.get("user-agent")?.slice(0, 200) ?? null,
+        meta: ua?.slice(0, 200) ?? null,
+        bot,
       });
     } catch {
       // never let logging break the pixel

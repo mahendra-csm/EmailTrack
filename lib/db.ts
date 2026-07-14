@@ -167,8 +167,11 @@ const SCHEMA: string[] = [
     stage       INTEGER,
     url         TEXT,
     meta        TEXT,
+    bot         INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT    NOT NULL DEFAULT ${NOW_TS}
   )`,
+  // Migration for DBs created before the bot column existed (idempotent).
+  `ALTER TABLE email_events ADD COLUMN IF NOT EXISTS bot INTEGER NOT NULL DEFAULT 0`,
   `CREATE INDEX IF NOT EXISTS idx_stages_lookup ON campaign_stages(campaign_id, stage, status)`,
   `CREATE INDEX IF NOT EXISTS idx_stages_due ON campaign_stages(status, send_date)`,
   `CREATE INDEX IF NOT EXISTS idx_contacts_campaign ON contacts(campaign_id)`,

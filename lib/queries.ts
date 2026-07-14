@@ -273,7 +273,7 @@ export async function trackingMatrix(campaignId: number): Promise<TrackingRow[]>
                  SUM(CASE WHEN type = 'open' THEN 1 ELSE 0 END) AS opens,
                  SUM(CASE WHEN type = 'click' THEN 1 ELSE 0 END) AS clicks
           FROM email_events
-          WHERE campaign_id = ?
+          WHERE campaign_id = ? AND bot = 0
           GROUP BY contact_id, stage`,
     args: [campaignId],
   });
@@ -382,7 +382,7 @@ export async function deliverabilityTotals(): Promise<DeliverabilityTotals> {
         COUNT(DISTINCT CASE WHEN type='reply'  THEN contact_id END) AS replies,
         COUNT(DISTINCT CASE WHEN type='unsubscribe' THEN contact_id END) AS unsubs,
         COUNT(DISTINCT CASE WHEN type='bounce' THEN contact_id END) AS bounces
-      FROM email_events`)
+      FROM email_events WHERE bot = 0`)
   );
   const supp = one<{ n: number }>(await c.execute("SELECT COUNT(*) AS n FROM suppressions"));
   const sent = s?.sent ?? 0;
@@ -444,7 +444,7 @@ export async function campaignDeliverability(campaignId: number): Promise<Campai
                    COUNT(DISTINCT CASE WHEN type='reply'  THEN contact_id END) AS replies,
                    COUNT(DISTINCT CASE WHEN type='unsubscribe' THEN contact_id END) AS unsubs,
                    COUNT(DISTINCT CASE WHEN type='bounce' THEN contact_id END) AS bounces
-            FROM email_events WHERE campaign_id = ?`,
+            FROM email_events WHERE campaign_id = ? AND bot = 0`,
       args: [campaignId],
     })
   );
@@ -488,10 +488,10 @@ export async function deliverabilityByCampaign(): Promise<CampaignDeliverability
        (SELECT COUNT(*) FROM campaign_stages s WHERE s.campaign_id=c.id AND s.status='sent') AS sent,
        (SELECT COUNT(*) FROM campaign_stages s WHERE s.campaign_id=c.id AND s.status='failed') AS failed,
        (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='bounce') AS bounces,
-       (SELECT SUM(CASE WHEN e.type='open' THEN 1 ELSE 0 END) FROM email_events e WHERE e.campaign_id=c.id) AS opens,
-       (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='open') AS opens_unique,
-       (SELECT SUM(CASE WHEN e.type='click' THEN 1 ELSE 0 END) FROM email_events e WHERE e.campaign_id=c.id) AS clicks,
-       (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='click') AS clicks_unique,
+       (SELECT SUM(CASE WHEN e.type='open' THEN 1 ELSE 0 END) FROM email_events e WHERE e.campaign_id=c.id AND e.bot=0) AS opens,
+       (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='open' AND e.bot=0) AS opens_unique,
+       (SELECT SUM(CASE WHEN e.type='click' THEN 1 ELSE 0 END) FROM email_events e WHERE e.campaign_id=c.id AND e.bot=0) AS clicks,
+       (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='click' AND e.bot=0) AS clicks_unique,
        (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='reply') AS replies,
        (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='unsubscribe') AS unsubs
      FROM campaigns c
@@ -645,9 +645,10 @@ export async function getCampaignReport(campaignId: number): Promise<CampaignRep
     last_error: string | null;
   }>(stageRes);
 
-  // 3. Fetch all events in campaign
+  // 3. Fetch all events in campaign (bot/scanner hits excluded so opens, clicks
+  //    and the per-recipient clicked-link list reflect real humans only).
   const eventRes = await c.execute({
-    sql: "SELECT contact_id, type, url FROM email_events WHERE campaign_id = ?",
+    sql: "SELECT contact_id, type, url FROM email_events WHERE campaign_id = ? AND bot = 0",
     args: [campaignId],
   });
   const eventsList = rows<{

@@ -12,8 +12,14 @@
 // batches never land on the same calendar day — no sending conflicts.
 // ---------------------------------------------------------------------------
 
-export type BatchType = 1 | 2;
-export const BATCH_TYPES: BatchType[] = [1, 2];
+// batch_type 3 = a WEBINAR: a single, one-shot blast of one chosen template to
+// the whole list (no follow-up drip). It reuses the exact same campaign /
+// stage / tracking / deliverability machinery as a normal campaign — it's just a
+// campaign whose schedule has a single touch that all goes out on day 1.
+export type BatchType = 1 | 2 | 3;
+export const BATCH_TYPES: BatchType[] = [1, 2, 3];
+export const WEBINAR_BATCH_TYPE: BatchType = 3;
+export const isWebinar = (batchType: number): boolean => batchType === WEBINAR_BATCH_TYPE;
 
 export interface TouchDef {
   seq: number; // 1..4 — stored in campaign_stages.stage
@@ -34,10 +40,13 @@ export const BATCH_SCHEDULE: Record<BatchType, TouchDef[]> = {
     { seq: 2, offset: 2, templateId: 2, label: "Email 2 · Reminder" },
     { seq: 3, offset: 4, templateId: 4, label: "Email 3 · Final Call" },
   ],
+  // Webinar: one blast, day 1. templateId here is unused — the chosen webinar
+  // template is copied into email_templates(stage 1) at creation time.
+  3: [{ seq: 1, offset: 0, templateId: 1, label: "Webinar blast" }],
 };
 
 /** Calendar days within the week each batch sends on (for display/help text). */
-export const BATCH_DAYS: Record<BatchType, number[]> = { 1: [1, 3, 5, 7], 2: [2, 4, 6] };
+export const BATCH_DAYS: Record<BatchType, number[]> = { 1: [1, 3, 5, 7], 2: [2, 4, 6], 3: [1] };
 
 export function touchesFor(batchType: BatchType): TouchDef[] {
   return BATCH_SCHEDULE[batchType] ?? BATCH_SCHEDULE[1];
