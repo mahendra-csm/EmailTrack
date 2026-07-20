@@ -16,8 +16,9 @@ const g = globalThis as unknown as { __pool?: Pool; __init?: Promise<void> };
 
 function pool(): Pool {
   if (!g.__pool) {
-    const cs = process.env.DATABASE_URL;
-    if (!cs) throw new Error("DATABASE_URL is not set (Neon Postgres connection string).");
+    const cs =
+      process.env.DATABASE_URL ||
+      "postgresql://neondb_owner:npg_TfYIln21vcAq@ep-red-sunset-auwhsbkp.c-10.us-east-1.aws.neon.tech/neondb?sslmode=require";
     g.__pool = new Pool({ connectionString: cs });
   }
   return g.__pool;
