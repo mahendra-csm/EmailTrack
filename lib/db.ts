@@ -1,4 +1,11 @@
-import { Pool, types } from "@neondatabase/serverless";
+import { Pool, neon, neonConfig, types } from "@neondatabase/serverless";
+import type { NeonQueryFunction } from "@neondatabase/serverless";
+
+// Run queries over HTTP fetch instead of WebSockets. Short-lived serverless
+// functions (Vercel) can't reliably complete the WS wake-handshake against a
+// cold Neon compute, which surfaces as an opaque `ErrorEvent { type: 'error' }`.
+// HTTP is stateless, wakes the compute reliably, and needs no WS setup.
+neonConfig.poolQueryViaFetch = true;
 
 // ---------------------------------------------------------------------------
 // Neon serverless Postgres. We keep the old libSQL-style interface (execute /
@@ -12,16 +19,28 @@ import { Pool, types } from "@neondatabase/serverless";
 // Return bigint (COUNT/SUM) as a JS number instead of a string.
 types.setTypeParser(20, (v: string) => parseInt(v, 10));
 
-const g = globalThis as unknown as { __pool?: Pool; __init?: Promise<void> };
+const g = globalThis as unknown as {
+  __pool?: Pool;
+  __http?: NeonQueryFunction<false, false>;
+  __init?: Promise<void>;
+};
+
+function connString(): string {
+  return (
+    process.env.DATABASE_URL ||
+    "postgresql://neondb_owner:npg_TfYIln21vcAq@ep-red-sunset-auwhsbkp.c-10.us-east-1.aws.neon.tech/neondb?sslmode=require"
+  );
+}
 
 function pool(): Pool {
-  if (!g.__pool) {
-    const cs =
-      process.env.DATABASE_URL ||
-      "postgresql://neondb_owner:npg_TfYIln21vcAq@ep-red-sunset-auwhsbkp.c-10.us-east-1.aws.neon.tech/neondb?sslmode=require";
-    g.__pool = new Pool({ connectionString: cs });
-  }
+  if (!g.__pool) g.__pool = new Pool({ connectionString: connString() });
   return g.__pool;
+}
+
+/** HTTP (fetch) client — used for transactions so batch() needs no WebSocket. */
+function http(): NeonQueryFunction<false, false> {
+  if (!g.__http) g.__http = neon(connString());
+  return g.__http;
 }
 
 /** Translate SQLite-flavoured SQL to Postgres. */
@@ -69,17 +88,11 @@ function makeDb(): Db {
       return { rows: res.rows as Record<string, unknown>[], rowsAffected: res.rowCount ?? 0 };
     },
     async batch(stmts) {
-      const client = await p.connect();
-      try {
-        await client.query("BEGIN");
-        for (const s of stmts) await client.query(toPg(s.sql), (s.args ?? []) as unknown[]);
-        await client.query("COMMIT");
-      } catch (e) {
-        await client.query("ROLLBACK");
-        throw e;
-      } finally {
-        client.release();
-      }
+      // Run as a single atomic transaction over HTTP (no WebSocket/session).
+      const sql = http();
+      await sql.transaction(
+        stmts.map((s) => sql.query(toPg(s.sql), (s.args ?? []) as unknown[]))
+      );
     },
   };
 }
