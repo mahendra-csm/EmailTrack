@@ -158,9 +158,11 @@ function ReportsClientInner({ campaigns }: { campaigns: CampaignWithCounts[] }) 
 
   const touches = useMemo(() => {
     if (!report) return [];
-    // Batch 1: 4 touches, Batch 2: 3 touches, Webinar (3): single blast.
+    // Batch 1: 4 touches, Batch 2: 3 touches, Webinar (3) / Custom mail (4):
+    // a single blast.
     const batchType = report.campaign.batch_type;
     if (batchType === 3) return [{ seq: 1, label: "Webinar" }];
+    if (batchType === 4) return [{ seq: 1, label: "Custom mail" }];
     return batchType === 1
       ? [
           { seq: 1, label: "Invitation" },

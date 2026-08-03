@@ -171,6 +171,8 @@ export async function sendWith(
     html: string;
     text?: string;
     headers?: Record<string, string>;
+    /** Full Message-ID (<…>) — carries the thread token used to match replies. */
+    messageId?: string;
   }
 ): Promise<SendResult> {
   const acc = await getAccountById(accountId);
@@ -190,6 +192,7 @@ export async function sendWith(
       html: params.html,
       text: params.text,
       headers: params.headers,
+      messageId: params.messageId,
     });
     await bumpUsage(acc.id);
     return { ok: true, smtpEmail: acc.email };

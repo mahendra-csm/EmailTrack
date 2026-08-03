@@ -243,7 +243,11 @@ export default function CampaignDetailPage() {
           </Link>
           <h1 style={{ marginTop: 6 }}>{data.campaign.name}</h1>
           <p className="muted" style={{ margin: 0 }}>
-            {data.campaign.batch_type === 3 ? "Webinar blast" : `Batch ${data.campaign.batch_type}`}
+            {data.campaign.batch_type === 3
+              ? "Webinar blast"
+              : data.campaign.batch_type === 4
+                ? "Custom mail"
+                : `Batch ${data.campaign.batch_type}`}
             {data.campaign.country ? ` · ${data.campaign.country}` : ""} · starts{" "}
             {data.campaign.start_date ?? "—"} · created {data.campaign.created_at}
           </p>

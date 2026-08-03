@@ -2,7 +2,10 @@ import {
   deliverabilityTotals,
   deliverabilityByCampaign,
   senderHealth,
+  filteredHits,
 } from "@/lib/queries";
+import { PREFETCH_MS } from "@/lib/botFilter";
+import TrackingHealth from "./TrackingHealth";
 
 export const dynamic = "force-dynamic";
 function pct(n: number, d: number): string {
@@ -13,6 +16,7 @@ export default async function DeliverabilityPage() {
   const totals = await deliverabilityTotals();
   const campaigns = await deliverabilityByCampaign();
   const senders = await senderHealth();
+  const filtered = await filteredHits();
 
    
   const cards = [
@@ -57,9 +61,12 @@ export default async function DeliverabilityPage() {
 
       <p className="muted" style={{ fontSize: 12, margin: "4px 2px 22px" }}>
         Open tracking needs <code>APP_URL</code> set to your public URL, and works once
-        recipients view images. Reply detection runs from the{" "}
-        <code>/api/cron/poll-replies</code> schedule.
+        recipients view images — machine fetches are excluded (see Tracking accuracy
+        below). Reply detection runs from the <code>/api/cron/poll-replies</code>{" "}
+        schedule.
       </p>
+
+      <TrackingHealth filtered={filtered} prefetchSec={Math.round(PREFETCH_MS / 1000)} />
 
       <h2 style={{ fontSize: 16, margin: "0 0 10px" }}>By campaign</h2>
       <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 28 }}>

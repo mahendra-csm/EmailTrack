@@ -8,6 +8,59 @@ export interface ParsedContact {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
+ * Parse a pasted address list into contacts — no file needed.
+ *
+ * Handles the shapes people actually paste: one per line, comma/semicolon
+ * separated, `Name <email@x.com>`, `email@x.com, Name`, or a wall of addresses
+ * copied out of a mail client. Anything that isn't an address is treated as the
+ * name for the address on that line (when there's exactly one).
+ */
+export function parseEmailList(text: string): ParsedContact[] {
+  const seen = new Set<string>();
+  const out: ParsedContact[] = [];
+  const FIND = /[^\s<>,;:"']+@[^\s<>,;:"']+\.[^\s<>,;:"']+/g;
+
+  for (const line of text.split(/\r?\n/)) {
+    const found = line.match(FIND);
+    if (!found) continue;
+
+    // With a single address on the line, whatever else is there is the name.
+    let name: string | null = null;
+    if (found.length === 1) {
+      name =
+        line
+          .replace(found[0], "")
+          .replace(/[<>,;"']/g, " ")
+          .replace(/\s+/g, " ")
+          .trim() || null;
+    }
+
+    for (const raw of found) {
+      const email = raw.trim().toLowerCase().replace(/^mailto:/, "");
+      if (!EMAIL_RE.test(email) || seen.has(email)) continue;
+      seen.add(email);
+      out.push({ email, name });
+    }
+  }
+
+  return out;
+}
+
+/** Merge contact lists, keeping the first occurrence of each address. */
+export function mergeContacts(...lists: ParsedContact[][]): ParsedContact[] {
+  const seen = new Set<string>();
+  const out: ParsedContact[] = [];
+  for (const list of lists) {
+    for (const c of list) {
+      if (seen.has(c.email)) continue;
+      seen.add(c.email);
+      out.push(c);
+    }
+  }
+  return out;
+}
+
+/**
  * Parse an uploaded .xlsx/.csv buffer into a de-duplicated contact list.
  * Column detection is forgiving: any header containing "email" / "name"
  * matches; if there are no obvious headers, the first email-looking column

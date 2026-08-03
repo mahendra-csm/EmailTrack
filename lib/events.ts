@@ -15,11 +15,14 @@ export async function recordEvent(e: {
   url?: string | null;
   meta?: string | null;
   bot?: boolean; // true = automated fetcher (scanner/prefetch) — excluded from stats
+  botReason?: string | null; // why it was flagged (prefetch / privacy-proxy / …)
+  ip?: string | null;
+  msSinceSend?: number | null; // how long after the send the hit arrived
 }): Promise<void> {
   const c = await db();
   await c.execute({
-    sql: `INSERT INTO email_events (type, campaign_id, contact_id, stage, url, meta, bot)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO email_events (type, campaign_id, contact_id, stage, url, meta, bot, bot_reason, ip, ms_since_send)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       e.type,
       e.campaignId ?? null,
@@ -28,6 +31,9 @@ export async function recordEvent(e: {
       e.url ?? null,
       e.meta ?? null,
       e.bot ? 1 : 0,
+      e.botReason ?? null,
+      e.ip ?? null,
+      e.msSinceSend ?? null,
     ],
   });
 }

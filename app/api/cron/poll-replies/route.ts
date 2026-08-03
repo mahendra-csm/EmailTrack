@@ -20,7 +20,7 @@ function authorized(req: NextRequest): boolean {
 async function handle(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   try {
-    const result = await pollReplies();
+    const result = await pollReplies("cron");
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(

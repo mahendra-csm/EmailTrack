@@ -1,6 +1,7 @@
 import { db } from "./db";
-import { Campaign, EmailTemplate, StageSummary, touchesFor } from "./types";
+import { Campaign, CUSTOM_BATCH_TYPE, EmailTemplate, StageSummary, touchesFor } from "./types";
 import { scheduleFor } from "./schedule";
+import { PREFETCH_MS } from "./botFilter";
 
 // libSQL rows come back as objects keyed by column name. We cast to our types;
 // TEXT -> string, INTEGER -> number, NULL -> null.
@@ -501,6 +502,134 @@ export async function deliverabilityByCampaign(): Promise<CampaignDeliverability
     ...row,
     delivered: Math.max(row.sent - row.bounces, 0),
   }));
+}
+
+// ---- Custom mail ----------------------------------------------------------
+
+export interface CustomMailRow extends Campaign {
+  total_contacts: number;
+  sent: number;
+  pending: number;
+  failed: number;
+  opens_unique: number;
+  clicks_unique: number;
+}
+
+/** Every custom-mail send with its live progress, newest first. */
+export async function customMails(): Promise<CustomMailRow[]> {
+  const c = await db();
+  const res = await c.execute({
+    sql: `SELECT c.*,
+            (SELECT COUNT(*) FROM contacts ct WHERE ct.campaign_id = c.id) AS total_contacts,
+            (SELECT COUNT(*) FROM campaign_stages s WHERE s.campaign_id=c.id AND s.status='sent') AS sent,
+            (SELECT COUNT(*) FROM campaign_stages s WHERE s.campaign_id=c.id AND s.status IN ('pending','sending')) AS pending,
+            (SELECT COUNT(*) FROM campaign_stages s WHERE s.campaign_id=c.id AND s.status='failed') AS failed,
+            (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='open' AND e.bot=0) AS opens_unique,
+            (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='click' AND e.bot=0) AS clicks_unique
+          FROM campaigns c
+          WHERE c.batch_type = ?
+          ORDER BY c.id DESC`,
+    args: [CUSTOM_BATCH_TYPE],
+  });
+  return rows<CustomMailRow>(res);
+}
+
+// ---- Tracking quality (how much machine traffic we filtered) --------------
+
+export interface FilteredHits {
+  type: "open" | "click";
+  reason: string;
+  n: number;
+}
+
+/**
+ * Breakdown of the open/click hits that were rejected as machine traffic, by
+ * reason. This is what makes the numbers explainable: "your open count didn't
+ * jump because 4,200 pixel fetches were delivery-time scans, not readers".
+ */
+export async function filteredHits(): Promise<FilteredHits[]> {
+  const c = await db();
+  const res = await c.execute(
+    `SELECT type, COALESCE(bot_reason, 'unclassified') AS reason, COUNT(*) AS n
+     FROM email_events
+     WHERE bot = 1 AND type IN ('open','click')
+     GROUP BY type, COALESCE(bot_reason, 'unclassified')
+     ORDER BY n DESC`
+  );
+  return rows<FilteredHits>(res);
+}
+
+export interface ReplyPollRow {
+  id: number;
+  ran_at: string;
+  source: string | null;
+  accounts: number;
+  scanned: number;
+  replies: number;
+  bounces: number;
+  errors: string | null;
+}
+
+/** Recent IMAP poll runs — shows whether reply detection is alive at all. */
+export async function recentReplyPolls(limit = 10): Promise<ReplyPollRow[]> {
+  const c = await db();
+  const res = await c.execute({
+    sql: "SELECT * FROM reply_polls ORDER BY id DESC LIMIT ?",
+    args: [limit],
+  });
+  return rows<ReplyPollRow>(res);
+}
+
+/**
+ * Re-classify HISTORICAL open/click events with the current filter rules.
+ *
+ * Old rows were flagged with a 2-second prefetch window and no privacy-proxy
+ * detection, so campaigns sent before the fix carry inflated open/click counts.
+ * We can still reconstruct the timing: campaign_stages.sent_at holds when that
+ * exact touch went out, so (event.created_at − stage.sent_at) is the same signal
+ * the live endpoint gets from the token, and `meta` holds the user-agent.
+ * Returns how many rows changed.
+ */
+export async function reclassifyHistory(): Promise<{ flagged: number; scanned: number }> {
+  const c = await db();
+  const windowSec = Math.round(PREFETCH_MS / 1000);
+
+  const total = one<{ n: number }>(
+    await c.execute("SELECT COUNT(*) AS n FROM email_events WHERE type IN ('open','click')")
+  );
+
+  // 1. Timing: the hit landed within the prefetch window of its own send.
+  const timing = await c.execute({
+    sql: `UPDATE email_events e
+          SET bot = 1, bot_reason = 'prefetch'
+          FROM campaign_stages s
+          WHERE e.type IN ('open','click') AND e.bot = 0
+            AND s.contact_id = e.contact_id AND s.stage = e.stage AND s.sent_at IS NOT NULL
+            AND e.created_at::timestamp >= s.sent_at::timestamp
+            AND e.created_at::timestamp < s.sent_at::timestamp + (? || ' seconds')::interval`,
+    args: [String(windowSec)],
+  });
+
+  // 2. Apple Mail Privacy Protection / image-proxy user-agents: a WebKit UA with
+  //    the real browser tokens stripped.
+  const proxy = await c.execute(
+    `UPDATE email_events
+     SET bot = 1, bot_reason = 'privacy-proxy'
+     WHERE type IN ('open','click') AND bot = 0
+       AND meta ILIKE '%AppleWebKit%'
+       AND meta NOT ILIKE '%Safari/%' AND meta NOT ILIKE '%Version/%' AND meta NOT ILIKE '%Mobile/%'`
+  );
+
+  // 3. No user-agent at all — every real client sends one.
+  const noUa = await c.execute(
+    `UPDATE email_events SET bot = 1, bot_reason = 'no-ua'
+     WHERE type IN ('open','click') AND bot = 0 AND (meta IS NULL OR meta = '')`
+  );
+
+  return {
+    flagged: timing.rowsAffected + proxy.rowsAffected + noUa.rowsAffected,
+    scanned: total?.n ?? 0,
+  };
 }
 
 // ---- Recipients (valid / bounced / unsubscribed / replied) ----------------

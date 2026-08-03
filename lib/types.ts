@@ -16,10 +16,18 @@
 // the whole list (no follow-up drip). It reuses the exact same campaign /
 // stage / tracking / deliverability machinery as a normal campaign — it's just a
 // campaign whose schedule has a single touch that all goes out on day 1.
-export type BatchType = 1 | 2 | 3;
-export const BATCH_TYPES: BatchType[] = [1, 2, 3];
+//
+// batch_type 4 = CUSTOM MAIL: the same one-shot blast, except the HTML and
+// subject are pasted in by hand instead of coming from the baked template
+// library, only `send_limit` recipients from the uploaded sheet are queued, and
+// it is sent on demand from the Custom mail page (auto_send = 0) at a chosen
+// concurrency/pace rather than by the global cron.
+export type BatchType = 1 | 2 | 3 | 4;
+export const BATCH_TYPES: BatchType[] = [1, 2, 3, 4];
 export const WEBINAR_BATCH_TYPE: BatchType = 3;
+export const CUSTOM_BATCH_TYPE: BatchType = 4;
 export const isWebinar = (batchType: number): boolean => batchType === WEBINAR_BATCH_TYPE;
+export const isCustom = (batchType: number): boolean => batchType === CUSTOM_BATCH_TYPE;
 
 export interface TouchDef {
   seq: number; // 1..4 — stored in campaign_stages.stage
@@ -43,10 +51,17 @@ export const BATCH_SCHEDULE: Record<BatchType, TouchDef[]> = {
   // Webinar: one blast, day 1. templateId here is unused — the chosen webinar
   // template is copied into email_templates(stage 1) at creation time.
   3: [{ seq: 1, offset: 0, templateId: 1, label: "Webinar blast" }],
+  // Custom mail: one blast, day 1, using the HTML pasted at creation time.
+  4: [{ seq: 1, offset: 0, templateId: 1, label: "Custom mail" }],
 };
 
 /** Calendar days within the week each batch sends on (for display/help text). */
-export const BATCH_DAYS: Record<BatchType, number[]> = { 1: [1, 3, 5, 7], 2: [2, 4, 6], 3: [1] };
+export const BATCH_DAYS: Record<BatchType, number[]> = {
+  1: [1, 3, 5, 7],
+  2: [2, 4, 6],
+  3: [1],
+  4: [1],
+};
 
 export function touchesFor(batchType: BatchType): TouchDef[] {
   return BATCH_SCHEDULE[batchType] ?? BATCH_SCHEDULE[1];
@@ -77,6 +92,9 @@ export interface Campaign {
   start_date: string | null;
   auto_send: number; // 1 = scheduler may send it, 0 = paused from auto-send
   country: string | null; // target country for this campaign (label/segmentation)
+  send_limit: number | null; // custom mail: how many recipients were queued
+  concurrency: number | null; // custom mail: emails in flight at once (1..5)
+  delay_ms: number | null; // custom mail: pause between sends in each lane
 }
 
 export type StageStatus = "pending" | "sending" | "sent" | "failed" | "canceled";

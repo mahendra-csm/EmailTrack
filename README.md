@@ -128,6 +128,28 @@ http://localhost:3000/api/cron/tick?key=YOUR_CRON_SECRET
 - `GET  /api/cron/tick?key=CRON_SECRET` — **the auto-send heartbeat**; sends one due batch
 - `POST /api/send-stage` — `{ campaign_id, stage }` manual override for one touch
 - `GET  /api/logs/:id` — send log for a campaign
+- `GET|POST /api/custom` — list / create a **custom mail** (see below)
+- `POST /api/custom/run` — `{ campaign_id }` sends one paced batch of a custom mail
+- `POST /api/replies/poll` — run the IMAP reply/bounce scan on demand
+- `POST /api/track/recount` — re-apply the bot filter to historical open/click events
+
+## Custom mail (`/custom`)
+
+A one-shot send that isn't tied to the baked template library: paste the email
+**HTML** and subject, paste the **recipient addresses straight into the page**
+(or upload a sheet — or both), set a **send limit**, and choose the pace —
+**1 to 5 emails in parallel**, with a gap between each lane's sends. Press
+*Create & send now* and the page drives it to completion; **Stop** and **Resume**
+are safe at any point because rows are claimed atomically, so nothing is ever
+sent twice.
+
+It is stored as a campaign with `batch_type = 4` and `auto_send = 0`, so the
+cron never re-sends it, and it goes through the same send path as everything
+else — logs, open/click tracking, retries, suppression, bounce and reply
+handling, deliverability and reports all work unchanged. Only the first
+`send_limit` addresses are queued; the rest of the list is ignored. If your HTML
+has no `{{unsubscribe_url}}` placeholder, an unsubscribe footer is appended
+automatically.
 
 ## SMTP pool logic & sender pinning
 
@@ -167,6 +189,15 @@ Stage status: `pending → sending → sent` | `failed` | `canceled`.
 - **Global suppression** — the send path checks `suppressions` + the contact's
   `unsubscribed_at`/`replied_at` before every email, so a suppressed address is
   never mailed again, in this or any future campaign.
+- **Bot filtering (accurate opens/clicks)** — mail gateways fetch every image and
+  follow every link *at delivery*, and Apple Mail Privacy Protection downloads
+  images whether or not the mail is read. A hit is recorded but **excluded from
+  the stats** (`email_events.bot = 1` with a `bot_reason`) when it arrives within
+  `PREFETCH_SEC` (default **90**) of the send, comes from a privacy proxy /
+  image-proxy user-agent, matches a known scanner, or carries no user-agent at
+  all. `/deliverability` shows the breakdown, and its **Re-check past opens &
+  clicks** button (`POST /api/track/recount`) applies the filter to events
+  recorded before it was tightened.
 - **Reply detection (auto-stop)** — `/api/cron/poll-replies` scans each sender
   mailbox over IMAP; when a contact replies, their follow-ups are canceled and a
   `reply` event is logged. Point a **second** cron-job.org schedule (≈ every
@@ -175,7 +206,14 @@ Stage status: `pending → sending → sent` | `failed` | `canceled`.
   https://<your-app>/api/cron/poll-replies?key=CRON_SECRET
   ```
   Uses the SMTP account's own credentials; IMAP host defaults to the SMTP host
-  with `smtp.`→`imap.` (override with `IMAP_HOST`).
+  with `smtp.`→`imap.` (override with `IMAP_HOST`, port with `IMAP_PORT`).
+  Replies are matched by a thread token stamped into every outgoing `Message-ID`
+  (so an answer from a different address still counts) and, failing that, by the
+  From address. Junk/Spam folders are scanned as well as INBOX (override the list
+  with `IMAP_FOLDERS`), and out-of-office autoresponders are **not** counted as
+  replies. Every run is logged to `reply_polls` and shown on `/deliverability`,
+  which also has a **Poll mailboxes now** button so IMAP errors are visible
+  immediately instead of failing silently.
 - **Plain-text part** — every email is sent as multipart (text + HTML) for better
   inbox placement.
 - **Deliverability dashboard** (`/deliverability`) — open/click/reply/unsub rates,

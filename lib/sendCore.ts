@@ -262,7 +262,22 @@ export async function sendStageRow(
   };
   if (oneClick) headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
 
-  const res = await sendWith(account.id, { to: contact.email, subject, html, text, headers });
+  // Thread token in the Message-ID: a reply quotes it back in In-Reply-To /
+  // References, so the poller can tie the answer to this exact contact even when
+  // the person replies from a different address (lib/replies.ts).
+  const domain = account.email.split("@")[1] || "mail.local";
+  const messageId = `<c${row.campaign_id}.k${row.contact_id}.s${row.stage}.${Date.now().toString(
+    36
+  )}${Math.random().toString(36).slice(2, 8)}@${domain}>`;
+
+  const res = await sendWith(account.id, {
+    to: contact.email,
+    subject,
+    html,
+    text,
+    headers,
+    messageId,
+  });
 
   if (res.ok) {
     await c.execute({

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verify, SendToken } from "@/lib/token";
 import { recordEvent } from "@/lib/events";
-import { isBotHit } from "@/lib/botFilter";
+import { classifyHit, clientIp } from "@/lib/botFilter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,14 +17,25 @@ export async function GET(req: NextRequest) {
   if (p) {
     try {
       const ua = req.headers.get("user-agent");
-      const bot = isBotHit(ua, typeof p.t === "number" ? Date.now() - p.t : null);
+      const ip = clientIp(req.headers);
+      // A pixel fetched moments after the send, from Apple's privacy proxy, or
+      // by a scanner is NOT a person reading the email — it's stored with bot=1
+      // and a reason instead of inflating the open count.
+      const v = classifyHit({
+        ua,
+        ip,
+        msSinceSend: typeof p.t === "number" ? Date.now() - p.t : null,
+      });
       await recordEvent({
         type: "open",
         campaignId: p.c,
         contactId: p.k,
         stage: p.s,
         meta: ua?.slice(0, 200) ?? null,
-        bot,
+        bot: v.bot,
+        botReason: v.reason,
+        ip,
+        msSinceSend: v.msSinceSend,
       });
     } catch {
       // never let logging break the pixel

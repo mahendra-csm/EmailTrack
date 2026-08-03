@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type IconName = "campaigns" | "plus" | "database" | "mail" | "chart" | "people" | "award" | "report" | "webinar";
+type IconName = "campaigns" | "plus" | "database" | "mail" | "chart" | "people" | "award" | "report" | "webinar" | "code";
 
 function Icon({ name }: { name: IconName }) {
   const common = {
@@ -87,6 +87,13 @@ function Icon({ name }: { name: IconName }) {
           <rect x="3" y="6" width="12" height="12" rx="2" />
         </svg>
       );
+    case "code":
+      return (
+        <svg {...common}>
+          <polyline points="16 18 22 12 16 6" />
+          <polyline points="8 6 2 12 8 18" />
+        </svg>
+      );
   }
 }
 
@@ -94,6 +101,7 @@ const NAV: { href: string; label: string; icon: IconName; exact: boolean }[] = [
   { href: "/", label: "Campaigns", icon: "campaigns", exact: true },
   { href: "/upload", label: "New campaign", icon: "plus", exact: false },
   { href: "/webinar", label: "Webinar", icon: "webinar", exact: false },
+  { href: "/custom", label: "Custom mail", icon: "code", exact: false },
   { href: "/committee", label: "Scientific Committee", icon: "award", exact: false },
   { href: "/recipients", label: "Recipients", icon: "people", exact: false },
   { href: "/deliverability", label: "Deliverability", icon: "chart", exact: false },
