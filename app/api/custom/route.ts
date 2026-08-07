@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
       concurrency,
       delayMs,
       country,
+      templateName: String(form.get("template_name") ?? "").trim() || null,
     });
     return NextResponse.json({ ...result, inFile: contacts.length }, { status: 201 });
   } catch (err) {

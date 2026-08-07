@@ -199,6 +199,20 @@ const SCHEMA: string[] = [
   `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS send_limit INTEGER`,
   `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS concurrency INTEGER`,
   `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS delay_ms INTEGER`,
+  // Reusable custom-mail templates. Every custom mail that goes out is saved
+  // here (keyed by a fingerprint of subject+body so re-sending the same content
+  // just bumps the counter instead of piling up duplicates), so the next send is
+  // "pick a template" rather than "paste the HTML again".
+  `CREATE TABLE IF NOT EXISTS custom_templates (
+    id           SERIAL PRIMARY KEY,
+    name         TEXT    NOT NULL,
+    subject      TEXT    NOT NULL,
+    body         TEXT    NOT NULL,
+    fingerprint  TEXT    NOT NULL UNIQUE,
+    created_at   TEXT    NOT NULL DEFAULT ${NOW_TS},
+    last_used_at TEXT,
+    use_count    INTEGER NOT NULL DEFAULT 0
+  )`,
   // Reply/bounce mailbox polling history, so the dashboard can show whether the
   // IMAP poll is actually running and what it saw (or why it failed).
   `CREATE TABLE IF NOT EXISTS reply_polls (
@@ -211,6 +225,20 @@ const SCHEMA: string[] = [
     bounces    INTEGER NOT NULL DEFAULT 0,
     errors     TEXT
   )`,
+  // ID-REUSE GUARD. Deleting a campaign removes its events, but tracking pixels
+  // in mail already delivered keep firing for days afterwards and insert fresh
+  // rows for that dead id. If the id sequence is ever behind those ids (it was —
+  // the sequence sat at 13 while events referenced campaigns up to 17, a
+  // leftover of the Turso->Neon migration inserting rows with explicit ids), a
+  // NEW campaign is handed an id that old events already point at and is born
+  // showing someone else's opens and clicks. Pushing both sequences past
+  // anything ever referenced makes that impossible. Cheap and idempotent.
+  `SELECT setval('campaigns_id_seq', GREATEST(
+     (SELECT COALESCE(MAX(id), 0) FROM campaigns),
+     (SELECT COALESCE(MAX(campaign_id), 0) FROM email_events), 1))`,
+  `SELECT setval('contacts_id_seq', GREATEST(
+     (SELECT COALESCE(MAX(id), 0) FROM contacts),
+     (SELECT COALESCE(MAX(contact_id), 0) FROM email_events), 1))`,
   `CREATE INDEX IF NOT EXISTS idx_stages_lookup ON campaign_stages(campaign_id, stage, status)`,
   `CREATE INDEX IF NOT EXISTS idx_stages_due ON campaign_stages(status, send_date)`,
   `CREATE INDEX IF NOT EXISTS idx_contacts_campaign ON contacts(campaign_id)`,

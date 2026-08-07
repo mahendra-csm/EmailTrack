@@ -34,6 +34,7 @@ const REASON_LABEL: Record<string, string> = {
   "privacy-proxy": "Apple Mail Privacy / image proxy pre-cache",
   "scanner-ua": "Known security scanner or crawler",
   "no-ua": "No browser identity (script)",
+  "stale-campaign-id": "Left over from a deleted campaign that shared this id",
   unclassified: "Flagged before reasons were recorded",
 };
 

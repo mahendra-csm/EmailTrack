@@ -2,6 +2,7 @@ import { db } from "./db";
 import { ParsedContact } from "./excel";
 import { CUSTOM_BATCH_TYPE } from "./types";
 import { today } from "./schedule";
+import { saveTemplate } from "./customTemplates";
 
 // ---------------------------------------------------------------------------
 // Create a CUSTOM MAIL send: your own pasted HTML + subject, your own sheet,
@@ -52,11 +53,14 @@ export async function createCustomMail(args: {
   concurrency: number;
   delayMs: number;
   country?: string | null;
+  /** Name to file this HTML under in the template library. */
+  templateName?: string | null;
 }): Promise<{
   campaignId: number;
   queued: number;
   skipped: number;
   startDate: string;
+  templateId: number | null;
 }> {
   const c = await db();
   const startDate = today();
@@ -113,5 +117,18 @@ export async function createCustomMail(args: {
 
   await c.batch(stmts, "write");
 
-  return { campaignId, queued: queued.length, skipped, startDate };
+  // File the HTML in the template library so the next send can just pick it.
+  // Never let a library failure break an otherwise-good send.
+  let templateId: number | null = null;
+  try {
+    templateId = await saveTemplate({
+      name: args.templateName?.trim() || args.name,
+      subject: args.subject,
+      body: args.html,
+    });
+  } catch {
+    /* template library is a convenience, not part of the send */
+  }
+
+  return { campaignId, queued: queued.length, skipped, startDate, templateId };
 }

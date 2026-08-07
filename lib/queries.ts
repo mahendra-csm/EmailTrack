@@ -626,8 +626,18 @@ export async function reclassifyHistory(): Promise<{ flagged: number; scanned: n
      WHERE type IN ('open','click') AND bot = 0 AND (meta IS NULL OR meta = '')`
   );
 
+  // 4. Events that predate their own campaign belong to a DELETED campaign whose
+  //    id was later handed to a new one (see the id-reuse guard in lib/db.ts).
+  //    They aren't this campaign's readers, so they must not count for it.
+  const stale = await c.execute(
+    `UPDATE email_events e SET bot = 1, bot_reason = 'stale-campaign-id'
+     FROM campaigns c
+     WHERE c.id = e.campaign_id AND e.bot = 0 AND e.created_at < c.created_at`
+  );
+
   return {
-    flagged: timing.rowsAffected + proxy.rowsAffected + noUa.rowsAffected,
+    flagged:
+      timing.rowsAffected + proxy.rowsAffected + noUa.rowsAffected + stale.rowsAffected,
     scanned: total?.n ?? 0,
   };
 }

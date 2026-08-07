@@ -28,6 +28,16 @@ interface CustomMail {
   clicks_unique: number;
 }
 
+interface SavedTemplate {
+  id: number;
+  name: string;
+  subject: string;
+  body: string;
+  created_at: string;
+  last_used_at: string | null;
+  use_count: number;
+}
+
 interface RunResult {
   sent: number;
   failed: number;
@@ -46,7 +56,11 @@ export default function CustomMailPage() {
 
   // Composer state
   const [html, setHtml] = useState("");
+  const [subject, setSubject] = useState("");
   const [emails, setEmails] = useState("");
+  const [templates, setTemplates] = useState<SavedTemplate[]>([]);
+  const [pickedTemplate, setPickedTemplate] = useState<number | "">("");
+  const [templateName, setTemplateName] = useState("");
   const [showPreview, setShowPreview] = useState(true);
   const [concurrency, setConcurrency] = useState(1);
   const [delaySec, setDelaySec] = useState(2);
@@ -76,9 +90,58 @@ export default function CustomMailPage() {
     if (res.ok) setMails((await res.json()).mails ?? []);
   }, []);
 
+  const loadTemplates = useCallback(async () => {
+    const res = await fetch("/api/custom/templates", { cache: "no-store" });
+    if (res.ok) setTemplates((await res.json()).templates ?? []);
+  }, []);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadTemplates();
+  }, [load, loadTemplates]);
+
+  /** Load a saved template into the composer (subject + HTML). */
+  function useTemplate(id: number | "") {
+    setPickedTemplate(id);
+    if (id === "") return;
+    const t = templates.find((x) => x.id === Number(id));
+    if (!t) return;
+    setSubject(t.subject);
+    setHtml(t.body);
+    setTemplateName(t.name);
+  }
+
+  async function saveDraftTemplate() {
+    setError(null);
+    setNotice(null);
+    if (!subject.trim() || !html.trim()) {
+      setError("Add a subject and the HTML before saving a template.");
+      return;
+    }
+    const res = await fetch("/api/custom/templates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: templateName || "Untitled template", subject, body: html }),
+    });
+    const d = await res.json();
+    if (!res.ok) {
+      setError(d.error ?? "Failed to save the template.");
+      return;
+    }
+    setNotice("Template saved — pick it from the dropdown next time.");
+    await loadTemplates();
+    setPickedTemplate(d.id);
+  }
+
+  async function removeTemplate(id: number) {
+    const t = templates.find((x) => x.id === id);
+    if (!confirm(`Delete the saved template "${t?.name ?? id}"? Mails already sent are unaffected.`)) {
+      return;
+    }
+    await fetch(`/api/custom/templates?id=${id}`, { method: "DELETE" });
+    if (pickedTemplate === id) setPickedTemplate("");
+    await loadTemplates();
+  }
 
   // Refresh the table while a send is running so opens/clicks tick up live.
   useEffect(() => {
@@ -169,8 +232,12 @@ export default function CustomMailPage() {
       );
       form.reset();
       setHtml("");
+      setSubject("");
       setEmails("");
+      setTemplateName("");
+      setPickedTemplate("");
       await load();
+      await loadTemplates(); // this send just added/updated a saved template
       // Send it straight away at the pace just chosen.
       await runMail(data.campaignId, concurrency, Math.round(delaySec * 1000));
     } catch (err) {
@@ -294,11 +361,49 @@ export default function CustomMailPage() {
           <input type="text" name="name" placeholder="Oncology invite — 3 Aug test" required />
         </label>
 
+        {/* Saved template library */}
+        <div className="field">
+          <span className="lab">Start from a saved template</span>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <select
+              value={pickedTemplate}
+              onChange={(e) => useTemplate(e.target.value === "" ? "" : Number(e.target.value))}
+              style={{ flex: "1 1 320px" }}
+            >
+              <option value="">
+                {templates.length ? "— Choose a template —" : "— No saved templates yet —"}
+              </option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} — {t.subject.slice(0, 50)}
+                  {t.use_count ? ` (sent ${t.use_count}×)` : " (draft)"}
+                </option>
+              ))}
+            </select>
+            {pickedTemplate !== "" && (
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => removeTemplate(Number(pickedTemplate))}
+              >
+                Delete
+              </button>
+            )}
+          </div>
+          <span className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            Every custom mail you send is saved here automatically. Picking one
+            fills in the subject and HTML below — edit them freely, and an edited
+            version is saved as a new template so the original stays intact.
+          </span>
+        </div>
+
         <label className="field">
           <span className="lab">Subject line</span>
           <input
             type="text"
             name="subject"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
             placeholder="Invitation to speak at …"
             required
           />
@@ -334,6 +439,27 @@ export default function CustomMailPage() {
             appended for you.
           </span>
         </label>
+
+        <div className="field">
+          <span className="lab">Save this HTML as</span>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input
+              type="text"
+              name="template_name"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              placeholder="Template name (defaults to the mail name above)"
+              style={{ flex: "1 1 320px" }}
+            />
+            <button type="button" className="btn secondary" onClick={saveDraftTemplate}>
+              Save template only
+            </button>
+          </div>
+          <span className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            Sending saves it automatically under this name — use the button to
+            store a draft now without sending anything.
+          </span>
+        </div>
 
         <div className="field">
           <span className="lab" style={{ display: "flex", justifyContent: "space-between" }}>
