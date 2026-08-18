@@ -56,10 +56,15 @@ const g = globalThis as unknown as {
 // DATABASE_URL still wins when it is set, so you can override per environment
 // without touching this file.
 // ---------------------------------------------------------------------------
-const DATABASE_URL_FALLBACK = "";
+const DATABASE_URL_IN_CODE =
+  "postgresql://postgres.ungcmxvjakkepvjzovqr:Mahendra%40123456%40@aws-0-us-east-1.pooler.supabase.com:6543/postgres";
 
 function connString(): string {
-  const url = process.env.DATABASE_URL || DATABASE_URL_FALLBACK;
+  // The in-code value WINS over the environment on purpose. A stale
+  // DATABASE_URL left behind in the Vercel dashboard (pointing at the old Neon
+  // database) would otherwise silently override this and the cutover would look
+  // like it had failed. Blank the constant to go back to env-driven config.
+  const url = DATABASE_URL_IN_CODE || process.env.DATABASE_URL;
   if (!url) {
     throw new Error(
       "No database configured. Set DATABASE_URL, or fill in " +

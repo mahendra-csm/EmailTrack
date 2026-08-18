@@ -489,18 +489,30 @@ export async function deliverabilityByCampaign(): Promise<CampaignDeliverability
        (SELECT COUNT(*) FROM campaign_stages s WHERE s.campaign_id=c.id AND s.status='sent') AS sent,
        (SELECT COUNT(*) FROM campaign_stages s WHERE s.campaign_id=c.id AND s.status='failed') AS failed,
        (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='bounce') AS bounces,
-       (SELECT SUM(CASE WHEN e.type='open' THEN 1 ELSE 0 END) FROM email_events e WHERE e.campaign_id=c.id AND e.bot=0) AS opens,
+       -- COALESCE: SUM over zero rows is NULL, and a campaign with no events yet
+       -- would otherwise hand the dashboard a null to format.
+       (SELECT COALESCE(SUM(CASE WHEN e.type='open' THEN 1 ELSE 0 END), 0) FROM email_events e WHERE e.campaign_id=c.id AND e.bot=0) AS opens,
        (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='open' AND e.bot=0) AS opens_unique,
-       (SELECT SUM(CASE WHEN e.type='click' THEN 1 ELSE 0 END) FROM email_events e WHERE e.campaign_id=c.id AND e.bot=0) AS clicks,
+       (SELECT COALESCE(SUM(CASE WHEN e.type='click' THEN 1 ELSE 0 END), 0) FROM email_events e WHERE e.campaign_id=c.id AND e.bot=0) AS clicks,
        (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='click' AND e.bot=0) AS clicks_unique,
        (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='reply') AS replies,
        (SELECT COUNT(DISTINCT e.contact_id) FROM email_events e WHERE e.campaign_id=c.id AND e.type='unsubscribe') AS unsubs
      FROM campaigns c
      ORDER BY c.created_at DESC, c.id DESC`
   );
+  const num = (v: unknown): number => Number(v ?? 0) || 0;
   return rows<CampaignDeliverability>(res).map((row) => ({
     ...row,
-    delivered: Math.max(row.sent - row.bounces, 0),
+    sent: num(row.sent),
+    failed: num(row.failed),
+    bounces: num(row.bounces),
+    opens: num(row.opens),
+    opens_unique: num(row.opens_unique),
+    clicks: num(row.clicks),
+    clicks_unique: num(row.clicks_unique),
+    replies: num(row.replies),
+    unsubs: num(row.unsubs),
+    delivered: Math.max(num(row.sent) - num(row.bounces), 0),
   }));
 }
 

@@ -52,6 +52,22 @@ try {
       continue;
     }
 
+    // smtp_accounts is special. Booting the app against an empty database seeds
+    // the senders from env with fresh ids and DEFAULT limits, which would then
+    // (a) make ON CONFLICT (id) DO NOTHING silently skip the real rows, keeping
+    // the wrong daily/hourly caps, and (b) collide with UNIQUE(email) whenever
+    // the source id differs, aborting the import. Contacts are pinned to sender
+    // ids too (contacts.smtp_account_id), so the source ids MUST survive.
+    // Clear the auto-seeded rows first and let the dump land verbatim.
+    if (table === "smtp_accounts") {
+      const emails = rows.map((r) => String(r.email).toLowerCase());
+      const ids = rows.map((r) => r.id);
+      await sql.unsafe(
+        `DELETE FROM smtp_accounts WHERE lower(email) = ANY($1) OR id = ANY($2)`,
+        [emails, ids]
+      );
+    }
+
     const cols = Object.keys(rows[0]);
     const quoted = cols.map((c) => `"${c}"`).join(", ");
     let done = 0;
