@@ -151,6 +151,65 @@ handling, deliverability and reports all work unchanged. Only the first
 has no `{{unsubscribe_url}}` placeholder, an unsubscribe footer is appended
 automatically.
 
+## Database: Neon or Supabase
+
+`lib/db.ts` picks its driver from `DATABASE_URL`:
+
+- a `*.neon.tech` URL uses Neon's serverless driver;
+- **anything else** (Supabase, plain Postgres) uses `postgres.js` over TCP.
+
+Switching hosts is therefore one env var, and rolling back is just as fast.
+
+**Supabase requires the transaction pooler URL** (port `6543`,
+`aws-*.pooler.supabase.com`), not the direct `5432` one — serverless functions
+open a connection per invocation and would exhaust the direct-connection limit.
+Prepared statements are disabled for that reason, and `int8` (from `COUNT`/`SUM`)
+is parsed to a JS number so the dashboard doesn't do string maths.
+
+### Migrating to Supabase
+
+The app builds its own schema, so the new database only needs to exist.
+
+1. Create the Supabase project and copy the **transaction pooler** URI.
+2. Point the app at it once so the tables get created:
+   ```
+   DATABASE_URL="postgresql://...pooler.supabase.com:6543/postgres" pnpm dev
+   ```
+   Open any page; `init()` runs the full schema and stamps `schema_version`.
+3. Dump the old database (needs it to be readable — a Neon project over its
+   compute quota returns HTTP 402 and cannot be exported):
+   ```
+   SOURCE_DATABASE_URL="postgresql://...neon.tech/neondb" node scripts/export-neon.mjs
+   ```
+   Writes `scripts/dump/*.json` (gitignored — it holds real contact data).
+4. Load it in:
+   ```
+   TARGET_DATABASE_URL="postgresql://...pooler.supabase.com:6543/postgres" node scripts/import-supabase.mjs
+   ```
+   Idempotent (`ON CONFLICT DO NOTHING`), and it advances every id sequence past
+   the imported ids — including ids that only survive in `email_events` — so a
+   restored campaign can never inherit a deleted one's opens.
+5. Set `DATABASE_URL` in Vercel to the Supabase URL and redeploy.
+6. Verify `/deliverability` and `/recipients` before deleting anything on Neon.
+   The `suppressions` table is the one you cannot afford to lose: it holds every
+   unsubscribe and hard bounce.
+
+## Keeping database compute cheap
+
+Serverless Postgres bills by compute time and suspends when idle, so the app is
+careful not to keep it awake for nothing:
+
+- the cron's send-window check runs **before** any connection is opened, so
+  out-of-hours pings cost zero queries;
+- `init()` skips its ~40 migrations when `schema_version` is already current
+  (bump `SCHEMA_VERSION` in `lib/db.ts` to force them to re-run);
+- dashboard polling is deliberately slow (30-60s, and the custom-mail page only
+  polls while a send is actually running).
+
+Ignoring this is what exhausted a Neon free tier: a 60-second cron that touched
+the database on every tick meant the compute never suspended, burning roughly
+720 compute-hours a month against an allowance near 190.
+
 ## SMTP pool logic & sender pinning
 
 Each account has a daily limit (e.g. 5 accounts × 2,900). On a contact's **first**

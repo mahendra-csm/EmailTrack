@@ -1,5 +1,6 @@
 import { Pool, neon, neonConfig, types } from "@neondatabase/serverless";
 import type { NeonQueryFunction } from "@neondatabase/serverless";
+import postgres from "postgres";
 
 // Run queries over HTTP fetch instead of WebSockets. Short-lived serverless
 // functions (Vercel) can't reliably complete the WS wake-handshake against a
@@ -8,20 +9,35 @@ import type { NeonQueryFunction } from "@neondatabase/serverless";
 neonConfig.poolQueryViaFetch = true;
 
 // ---------------------------------------------------------------------------
-// Neon serverless Postgres. We keep the old libSQL-style interface (execute /
+// Postgres access layer. We keep the old libSQL-style interface (execute /
 // batch returning { rows, rowsAffected }) so the rest of the app barely changes,
 // and translate the few SQLite-isms (`?` placeholders and datetime/date('now'))
 // to Postgres at the adapter boundary. Timestamps are stored as TEXT in the same
 // "YYYY-MM-DD HH:MM:SS" / "YYYY-MM-DD" UTC format SQLite used, so all the
 // string-based date handling in the app keeps working unchanged.
+//
+// TWO BACKENDS, chosen automatically from DATABASE_URL:
+//   • Neon      — its own serverless driver (HTTP/WS to Neon's proxy).
+//   • Anything else (Supabase, plain Postgres) — postgres.js over TCP.
+// Switching hosts is therefore only a DATABASE_URL change, and switching back
+// is just as quick if a migration goes wrong.
+//
+// SUPABASE NOTE: use the **transaction pooler** URL (port 6543, host
+// aws-*.pooler.supabase.com), not the direct 5432 one. Serverless functions open
+// a connection per invocation and would exhaust the direct-connection limit.
+// Prepared statements are disabled below because the transaction pooler can't
+// support them.
 // ---------------------------------------------------------------------------
 
 // Return bigint (COUNT/SUM) as a JS number instead of a string.
 types.setTypeParser(20, (v: string) => parseInt(v, 10));
 
+type Sql = ReturnType<typeof postgres>;
+
 const g = globalThis as unknown as {
   __pool?: Pool;
   __http?: NeonQueryFunction<false, false>;
+  __pg?: Sql;
   __init?: Promise<void>;
 };
 
@@ -30,6 +46,11 @@ function connString(): string {
     process.env.DATABASE_URL ||
     "postgresql://neondb_owner:npg_TfYIln21vcAq@ep-red-sunset-auwhsbkp.c-10.us-east-1.aws.neon.tech/neondb?sslmode=require"
   );
+}
+
+/** Neon's driver only speaks to Neon; everything else goes through postgres.js. */
+function isNeon(): boolean {
+  return /\.neon\.tech(?::|\/|$)/i.test(connString());
 }
 
 function pool(): Pool {
@@ -41,6 +62,48 @@ function pool(): Pool {
 function http(): NeonQueryFunction<false, false> {
   if (!g.__http) g.__http = neon(connString());
   return g.__http;
+}
+
+/** postgres.js client for Supabase / any standard Postgres. */
+function pg(): Sql {
+  if (!g.__pg) {
+    g.__pg = postgres(connString(), {
+      // The Supabase transaction pooler multiplexes connections, so a session
+      // can't hold prepared statements.
+      prepare: false,
+      // COUNT()/SUM() come back as int8. postgres.js hands those over as
+      // strings by default, which would silently turn every stat in the
+      // dashboard into string maths - parse them to numbers, matching the
+      // types.setTypeParser(20, ...) already applied on the Neon path.
+      types: {
+        int8: {
+          to: 20,
+          from: [20],
+          serialize: (v: number | string) => String(v),
+          parse: (v: string) => parseInt(v, 10),
+        },
+      },
+      // Serverless invocations are short-lived; a big pool per instance just
+      // wastes the project's connection budget.
+      max: Number(process.env.PG_POOL_MAX ?? 3),
+      idle_timeout: 20,
+      connect_timeout: 15,
+      ssl: "require",
+      onnotice: () => {},
+    });
+  }
+  return g.__pg;
+}
+
+/** One statement, whichever backend is configured. */
+async function runOne(sql: string, args: unknown[]): Promise<DbResult> {
+  if (isNeon()) {
+    const res = await pool().query(sql, args);
+    return { rows: res.rows as Record<string, unknown>[], rowsAffected: res.rowCount ?? 0 };
+  }
+  const res = await pg().unsafe(sql, args as never[]);
+  const rows = res as unknown as Record<string, unknown>[];
+  return { rows, rowsAffected: res.count ?? rows.length };
 }
 
 /** Translate SQLite-flavoured SQL to Postgres. */
@@ -79,20 +142,27 @@ export interface Db {
 }
 
 function makeDb(): Db {
-  const p = pool();
   return {
     async execute(q) {
       const sql = typeof q === "string" ? q : q.sql;
       const args = typeof q === "string" ? [] : q.args ?? [];
-      const res = await p.query(toPg(sql), args as unknown[]);
-      return { rows: res.rows as Record<string, unknown>[], rowsAffected: res.rowCount ?? 0 };
+      return runOne(toPg(sql), args as unknown[]);
     },
     async batch(stmts) {
-      // Run as a single atomic transaction over HTTP (no WebSocket/session).
-      const sql = http();
-      await sql.transaction(
-        stmts.map((s) => sql.query(toPg(s.sql), (s.args ?? []) as unknown[]))
-      );
+      if (isNeon()) {
+        // Run as a single atomic transaction over HTTP (no WebSocket/session).
+        const sql = http();
+        await sql.transaction(
+          stmts.map((s) => sql.query(toPg(s.sql), (s.args ?? []) as unknown[]))
+        );
+        return;
+      }
+      // postgres.js: one real transaction, so a half-written upload rolls back.
+      await pg().begin(async (tx) => {
+        for (const s of stmts) {
+          await tx.unsafe(toPg(s.sql), (s.args ?? []) as never[]);
+        }
+      });
     },
   };
 }
@@ -274,25 +344,25 @@ async function seedSmtpFromEnv(c: Db): Promise<void> {
 const SCHEMA_VERSION = 4;
 
 async function init(): Promise<void> {
-  const p = pool();
-
   // COMPUTE COST: a serverless app cold-starts constantly and Neon bills by
   // compute time, so replaying ~40 DDL statements plus the SMTP seed on every
   // single cold start was a real chunk of the monthly quota. One cheap lookup
   // tells us the database is already at this version, and we skip all of it.
   try {
-    const cur = await p.query("SELECT 1 FROM schema_version WHERE version >= $1 LIMIT 1", [
+    const cur = await runOne("SELECT 1 FROM schema_version WHERE version >= $1 LIMIT 1", [
       SCHEMA_VERSION,
     ]);
     if (cur.rows.length > 0) return;
   } catch {
-    // No schema_version table yet - this is a first boot, fall through.
+    // No schema_version table yet - this is a first boot, fall through. On a
+    // brand-new (e.g. freshly created Supabase) database this is what builds
+    // every table from scratch.
   }
 
-  for (const stmt of SCHEMA) await p.query(stmt);
+  for (const stmt of SCHEMA) await runOne(stmt, []);
   await seedSmtpFromEnv(makeDb());
-  await p.query("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)");
-  await p.query("INSERT INTO schema_version (version) VALUES ($1) ON CONFLICT DO NOTHING", [
+  await runOne("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)", []);
+  await runOne("INSERT INTO schema_version (version) VALUES ($1) ON CONFLICT DO NOTHING", [
     SCHEMA_VERSION,
   ]);
 }
