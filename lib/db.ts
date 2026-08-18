@@ -41,16 +41,30 @@ const g = globalThis as unknown as {
   __init?: Promise<void>;
 };
 
+// ---------------------------------------------------------------------------
+// THE DATABASE CONNECTION STRING lives here, by deliberate choice, so the app
+// needs no environment variables configured in Vercel.
+//
+// Supabase: use the TRANSACTION POOLER URI (port 6543,
+// aws-*.pooler.supabase.com) - not the direct 5432 one.
+//
+// !! This repository is PUBLIC, so this password is readable by anyone, and
+// !! automated scrapers do find credentials committed to public repos. If that
+// !! is ever not what you want, the fix is Settings -> General -> Change
+// !! visibility -> Private, and then rotate this password.
+//
+// DATABASE_URL still wins when it is set, so you can override per environment
+// without touching this file.
+// ---------------------------------------------------------------------------
+const DATABASE_URL_FALLBACK = "";
+
 function connString(): string {
-  const url = process.env.DATABASE_URL;
+  const url = process.env.DATABASE_URL || DATABASE_URL_FALLBACK;
   if (!url) {
-    // Deliberately fatal rather than falling back to a hardcoded database.
-    // A silent fallback is dangerous during a host migration: one missing env
-    // var and the app quietly keeps writing to the OLD database while you think
-    // you have cut over, splitting your data across two of them.
     throw new Error(
-      "DATABASE_URL is not set. Point it at your Postgres (Supabase: use the " +
-        "transaction pooler URL on port 6543)."
+      "No database configured. Set DATABASE_URL, or fill in " +
+        "DATABASE_URL_FALLBACK in lib/db.ts (Supabase: the transaction pooler " +
+        "URL on port 6543)."
     );
   }
   return url;
