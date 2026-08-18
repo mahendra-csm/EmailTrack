@@ -14,7 +14,7 @@ export interface SmtpAccountUsage {
   remaining: number;
 }
 
-function useSmtpAccounts(pollMs = 4000) {
+function useSmtpAccounts(pollMs = 30000) {
   const [accounts, setAccounts] = useState<SmtpAccountUsage[]>([]);
   const load = useCallback(async () => {
     try {

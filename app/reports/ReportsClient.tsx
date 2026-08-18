@@ -63,13 +63,14 @@ function ReportsClientInner({ campaigns }: { campaigns: CampaignWithCounts[] }) 
     }
   }, [selectedId, loadReport]);
 
-  // Live updates: re-pull the selected campaign's report every 15s (tab visible)
-  // so open/click numbers stay current without a manual reload.
+  // Live updates: re-pull the selected campaign report every 60s (tab visible)
+  // so open/click numbers stay current without a manual reload. Kept slow on
+  // purpose: each poll is a database query, and Neon bills by compute time.
   useEffect(() => {
     if (selectedId === null) return;
     const id = setInterval(() => {
       if (document.visibilityState === "visible") loadReport(selectedId, true);
-    }, 15000);
+    }, 60000);
     return () => clearInterval(id);
   }, [selectedId, loadReport]);
 

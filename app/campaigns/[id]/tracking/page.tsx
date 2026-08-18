@@ -95,7 +95,7 @@ export default async function TrackingPage({
             counted live and exclude automated scanner/prefetch hits.
           </p>
         </div>
-        <AutoRefresh seconds={10} />
+        <AutoRefresh seconds={60} />
       </div>
 
       <div className="grid cards-row" style={{ marginBottom: 18 }}>

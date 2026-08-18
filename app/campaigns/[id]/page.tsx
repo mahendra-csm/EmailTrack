@@ -104,7 +104,7 @@ export default function CampaignDetailPage() {
     loadAccounts();
   }, [loadDetail, loadAccounts]);
 
-  // Live updates: refresh deliverability/opens/clicks every 10s while the tab is
+  // Live updates: refresh deliverability/opens/clicks every 30s while the tab is
   // visible. Paused during an active manual send (that loop refreshes already).
   useEffect(() => {
     const id = setInterval(() => {
@@ -112,7 +112,7 @@ export default function CampaignDetailPage() {
         loadDetail();
         loadAccounts();
       }
-    }, 10000);
+    }, 30000);
     return () => clearInterval(id);
   }, [sending, loadDetail, loadAccounts]);
 

@@ -67,13 +67,17 @@ export interface TickResult {
 }
 
 export async function runDueSends(maxCount = 50): Promise<TickResult> {
-  const c = await db();
-
-  // Respect the daily send window (e.g. start at 9:30 AM local) before doing work.
+  // COMPUTE COST: check the window BEFORE touching the database. Neon bills by
+  // compute time and suspends an idle compute after a few minutes, but the cron
+  // pings every 60s around the clock, so opening a connection here first kept
+  // the database awake 24/7 and burned the whole monthly quota on nights when
+  // there was nothing to send. Outside the window this now costs zero queries.
   const win = sendWindow();
   if (!win.ok) {
     return { ok: true, claimed: 0, sent: 0, failed: 0, retry: 0, canceled: 0, noQuota: 0, remaining: 0, message: win.message };
   }
+
+  const c = await db();
 
   // Reset any account whose counter is from a previous day, so quota checks in
   // the claim SQL see fresh numbers. Keep the snapshot for sender assignment.

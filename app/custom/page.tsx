@@ -143,13 +143,16 @@ export default function CustomMailPage() {
     await loadTemplates();
   }
 
-  // Refresh the table while a send is running so opens/clicks tick up live.
+  // Refresh the table while a send is running so progress ticks up live. When
+  // nothing is sending we stop polling entirely: each poll is a database query,
+  // and Neon bills by compute time, so an idle open tab should cost nothing.
   useEffect(() => {
+    if (runningId === null) return;
     const t = setInterval(() => {
       if (document.visibilityState === "visible") load();
-    }, 10000);
+    }, 15000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, runningId]);
 
   /**
    * Drive one custom mail to completion: each call sends a small batch at the

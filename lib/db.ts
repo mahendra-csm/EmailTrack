@@ -268,10 +268,33 @@ async function seedSmtpFromEnv(c: Db): Promise<void> {
   }
 }
 
+// Bump this whenever SCHEMA changes; that's what makes the migrations re-run
+// (and re-seeds SMTP accounts from env). Leaving it alone is what keeps cold
+// starts cheap.
+const SCHEMA_VERSION = 4;
+
 async function init(): Promise<void> {
   const p = pool();
+
+  // COMPUTE COST: a serverless app cold-starts constantly and Neon bills by
+  // compute time, so replaying ~40 DDL statements plus the SMTP seed on every
+  // single cold start was a real chunk of the monthly quota. One cheap lookup
+  // tells us the database is already at this version, and we skip all of it.
+  try {
+    const cur = await p.query("SELECT 1 FROM schema_version WHERE version >= $1 LIMIT 1", [
+      SCHEMA_VERSION,
+    ]);
+    if (cur.rows.length > 0) return;
+  } catch {
+    // No schema_version table yet - this is a first boot, fall through.
+  }
+
   for (const stmt of SCHEMA) await p.query(stmt);
   await seedSmtpFromEnv(makeDb());
+  await p.query("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)");
+  await p.query("INSERT INTO schema_version (version) VALUES ($1) ON CONFLICT DO NOTHING", [
+    SCHEMA_VERSION,
+  ]);
 }
 
 /** Ensure schema + seed have run (once per warm instance), then return the db. */

@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 // which re-runs the server component and streams fresh data in without a full
 // reload. Pauses while the tab is hidden so we don't poll needlessly.
 export default function AutoRefresh({
-  seconds = 10,
+  seconds = 60,
   label = "Live",
 }: {
   seconds?: number;
