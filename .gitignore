@@ -13,3 +13,7 @@ next-env.d.ts
 npm-debug.log*
 .DS_Store
 tsconfig.tsbuildinfo
+
+# local env (never commit - holds SMTP passwords and DB credentials)
+.env*.local
+!.env.local.example

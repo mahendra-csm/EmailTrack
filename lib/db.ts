@@ -42,10 +42,18 @@ const g = globalThis as unknown as {
 };
 
 function connString(): string {
-  return (
-    process.env.DATABASE_URL ||
-    "postgresql://neondb_owner:npg_TfYIln21vcAq@ep-red-sunset-auwhsbkp.c-10.us-east-1.aws.neon.tech/neondb?sslmode=require"
-  );
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    // Deliberately fatal rather than falling back to a hardcoded database.
+    // A silent fallback is dangerous during a host migration: one missing env
+    // var and the app quietly keeps writing to the OLD database while you think
+    // you have cut over, splitting your data across two of them.
+    throw new Error(
+      "DATABASE_URL is not set. Point it at your Postgres (Supabase: use the " +
+        "transaction pooler URL on port 6543)."
+    );
+  }
+  return url;
 }
 
 /** Neon's driver only speaks to Neon; everything else goes through postgres.js. */
